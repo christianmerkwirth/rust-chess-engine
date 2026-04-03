@@ -3,16 +3,16 @@
 pub struct Square(pub u8);
 
 impl Square {
-    pub fn from_file_rank(_file: u8, _rank: u8) -> Square {
-        todo!()
+    pub fn from_file_rank(file: u8, rank: u8) -> Square {
+        Square(rank * 8 + file)
     }
 
     pub fn file(self) -> u8 {
-        todo!()
+        self.0 % 8
     }
 
     pub fn rank(self) -> u8 {
-        todo!()
+        self.0 / 8
     }
 }
 
@@ -24,7 +24,10 @@ pub enum Color {
 
 impl Color {
     pub fn opposite(self) -> Color {
-        todo!()
+        match self {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        }
     }
 }
 
@@ -47,36 +50,45 @@ pub struct Move(pub u16);
 impl Move {
     pub const NONE: Move = Move(0);
 
-    pub fn new(_from: Square, _to: Square, _flags: u8, _promo: u8) -> Move {
-        todo!()
+    pub fn new(from: Square, to: Square, flags: u8, promo: u8) -> Move {
+        let val = (from.0 as u16)
+            | ((to.0 as u16) << 6)
+            | ((flags as u16) << 12)
+            | ((promo as u16) << 14);
+        Move(val)
     }
 
     pub fn from_sq(self) -> Square {
-        todo!()
+        Square((self.0 & 0x3F) as u8)
     }
 
     pub fn to_sq(self) -> Square {
-        todo!()
+        Square(((self.0 >> 6) & 0x3F) as u8)
     }
 
     pub fn flags(self) -> u8 {
-        todo!()
+        ((self.0 >> 12) & 0x3) as u8
     }
 
     pub fn promotion_piece(self) -> Piece {
-        todo!()
+        match (self.0 >> 14) & 0x3 {
+            0 => Piece::Knight,
+            1 => Piece::Bishop,
+            2 => Piece::Rook,
+            _ => Piece::Queen,
+        }
     }
 
     pub fn is_promotion(self) -> bool {
-        todo!()
+        self.flags() == 1
     }
 
     pub fn is_en_passant(self) -> bool {
-        todo!()
+        self.flags() == 2
     }
 
     pub fn is_castling(self) -> bool {
-        todo!()
+        self.flags() == 3
     }
 }
 
@@ -91,12 +103,12 @@ impl CastlingRights {
     pub const BQ: u8 = 8;
     pub const ALL: u8 = 15;
 
-    pub fn has(self, _flag: u8) -> bool {
-        todo!()
+    pub fn has(self, flag: u8) -> bool {
+        self.0 & flag != 0
     }
 
-    pub fn remove(&mut self, _flag: u8) {
-        todo!()
+    pub fn remove(&mut self, flag: u8) {
+        self.0 &= !flag;
     }
 }
 

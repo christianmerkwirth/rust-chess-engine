@@ -7,62 +7,64 @@ use crate::types::Square;
 pub struct Bitboard(pub u64);
 
 impl Bitboard {
-    pub const FILE_A: Bitboard = Bitboard(0);
-    pub const FILE_B: Bitboard = Bitboard(0);
-    pub const FILE_C: Bitboard = Bitboard(0);
-    pub const FILE_D: Bitboard = Bitboard(0);
-    pub const FILE_E: Bitboard = Bitboard(0);
-    pub const FILE_F: Bitboard = Bitboard(0);
-    pub const FILE_G: Bitboard = Bitboard(0);
-    pub const FILE_H: Bitboard = Bitboard(0);
+    pub const FILE_A: Bitboard = Bitboard(0x0101010101010101);
+    pub const FILE_B: Bitboard = Bitboard(0x0202020202020202);
+    pub const FILE_C: Bitboard = Bitboard(0x0404040404040404);
+    pub const FILE_D: Bitboard = Bitboard(0x0808080808080808);
+    pub const FILE_E: Bitboard = Bitboard(0x1010101010101010);
+    pub const FILE_F: Bitboard = Bitboard(0x2020202020202020);
+    pub const FILE_G: Bitboard = Bitboard(0x4040404040404040);
+    pub const FILE_H: Bitboard = Bitboard(0x8080808080808080);
 
-    pub const RANK_1: Bitboard = Bitboard(0);
-    pub const RANK_2: Bitboard = Bitboard(0);
-    pub const RANK_3: Bitboard = Bitboard(0);
-    pub const RANK_4: Bitboard = Bitboard(0);
-    pub const RANK_5: Bitboard = Bitboard(0);
-    pub const RANK_6: Bitboard = Bitboard(0);
-    pub const RANK_7: Bitboard = Bitboard(0);
-    pub const RANK_8: Bitboard = Bitboard(0);
+    pub const RANK_1: Bitboard = Bitboard(0x00000000000000FF);
+    pub const RANK_2: Bitboard = Bitboard(0x000000000000FF00);
+    pub const RANK_3: Bitboard = Bitboard(0x0000000000FF0000);
+    pub const RANK_4: Bitboard = Bitboard(0x00000000FF000000);
+    pub const RANK_5: Bitboard = Bitboard(0x000000FF00000000);
+    pub const RANK_6: Bitboard = Bitboard(0x0000FF0000000000);
+    pub const RANK_7: Bitboard = Bitboard(0x00FF000000000000);
+    pub const RANK_8: Bitboard = Bitboard(0xFF00000000000000);
 
     pub fn empty() -> Bitboard {
-        todo!()
+        Bitboard(0)
     }
 
     pub fn full() -> Bitboard {
-        todo!()
+        Bitboard(!0u64)
     }
 
-    pub fn from_square(_sq: Square) -> Bitboard {
-        todo!()
+    pub fn from_square(sq: Square) -> Bitboard {
+        Bitboard(1u64 << sq.0)
     }
 
-    pub fn is_set(self, _sq: Square) -> bool {
-        todo!()
+    pub fn is_set(self, sq: Square) -> bool {
+        self.0 & (1u64 << sq.0) != 0
     }
 
-    pub fn set(&mut self, _sq: Square) {
-        todo!()
+    pub fn set(&mut self, sq: Square) {
+        self.0 |= 1u64 << sq.0;
     }
 
-    pub fn clear(&mut self, _sq: Square) {
-        todo!()
+    pub fn clear(&mut self, sq: Square) {
+        self.0 &= !(1u64 << sq.0);
     }
 
     pub fn count(self) -> u32 {
-        todo!()
+        self.0.count_ones()
     }
 
     pub fn is_empty(self) -> bool {
-        todo!()
+        self.0 == 0
     }
 
     pub fn lsb(self) -> Square {
-        todo!()
+        Square(self.0.trailing_zeros() as u8)
     }
 
     pub fn pop_lsb(&mut self) -> Square {
-        todo!()
+        let sq = self.lsb();
+        self.0 &= self.0 - 1;
+        sq
     }
 }
 
@@ -70,67 +72,71 @@ impl Iterator for Bitboard {
     type Item = Square;
 
     fn next(&mut self) -> Option<Square> {
-        todo!()
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.pop_lsb())
+        }
     }
 }
 
 impl BitAnd for Bitboard {
     type Output = Bitboard;
     fn bitand(self, rhs: Bitboard) -> Bitboard {
-        todo!()
+        Bitboard(self.0 & rhs.0)
     }
 }
 
 impl BitAndAssign for Bitboard {
     fn bitand_assign(&mut self, rhs: Bitboard) {
-        *self = *self & rhs;
+        self.0 &= rhs.0;
     }
 }
 
 impl BitOr for Bitboard {
     type Output = Bitboard;
     fn bitor(self, rhs: Bitboard) -> Bitboard {
-        todo!()
+        Bitboard(self.0 | rhs.0)
     }
 }
 
 impl BitOrAssign for Bitboard {
     fn bitor_assign(&mut self, rhs: Bitboard) {
-        *self = *self | rhs;
+        self.0 |= rhs.0;
     }
 }
 
 impl BitXor for Bitboard {
     type Output = Bitboard;
     fn bitxor(self, rhs: Bitboard) -> Bitboard {
-        todo!()
+        Bitboard(self.0 ^ rhs.0)
     }
 }
 
 impl BitXorAssign for Bitboard {
     fn bitxor_assign(&mut self, rhs: Bitboard) {
-        *self = *self ^ rhs;
+        self.0 ^= rhs.0;
     }
 }
 
 impl Not for Bitboard {
     type Output = Bitboard;
     fn not(self) -> Bitboard {
-        todo!()
+        Bitboard(!self.0)
     }
 }
 
 impl Shl<u32> for Bitboard {
     type Output = Bitboard;
     fn shl(self, rhs: u32) -> Bitboard {
-        todo!()
+        Bitboard(self.0 << rhs)
     }
 }
 
 impl Shr<u32> for Bitboard {
     type Output = Bitboard;
     fn shr(self, rhs: u32) -> Bitboard {
-        todo!()
+        Bitboard(self.0 >> rhs)
     }
 }
 
