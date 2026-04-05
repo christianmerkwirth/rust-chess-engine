@@ -1,6 +1,7 @@
 pub mod alphabeta;
 pub mod tt;
 pub mod ordering;
+pub mod smp;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -40,6 +41,7 @@ pub fn iterative_deepening(
     stop: &AtomicBool,
     pondering: &AtomicBool,
     tablebase: Option<Arc<SyzygyTablebase>>,
+    start_depth: i32,
     info_callback: impl Fn(SearchInfo),
 ) -> SearchResult {
     let start_time = Instant::now();
@@ -54,7 +56,7 @@ pub fn iterative_deepening(
 
     let max_depth = limits.depth.unwrap_or(100);
 
-    for depth in 1..=max_depth {
+    for depth in start_depth..=max_depth {
         let score = search(pos, &mut state, tt, depth, 0, -INFINITY, INFINITY);
 
         if stop.load(Ordering::Relaxed) {

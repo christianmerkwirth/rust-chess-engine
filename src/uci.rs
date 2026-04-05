@@ -7,7 +7,8 @@ use std::thread::{self, JoinHandle};
 use crate::board::Position;
 use crate::book::PolyglotBook;
 use crate::search::tt::TranspositionTable;
-use crate::search::{iterative_deepening, SearchInfo};
+use crate::search::smp::ThreadPool;
+use crate::search::SearchInfo;
 use crate::tablebase::SyzygyTablebase;
 use crate::time::{self, GoParams};
 
@@ -19,6 +20,7 @@ pub struct Engine {
     pub search_handle: Option<JoinHandle<()>>,
     pub book: Option<PolyglotBook>,
     pub tablebase: Option<Arc<SyzygyTablebase>>,
+    pub pool: ThreadPool,
 }
 
 impl Engine {
@@ -31,6 +33,7 @@ impl Engine {
             search_handle: None,
             book: None,
             tablebase: None,
+            pool: ThreadPool::new(1),
         }
     }
 
@@ -56,6 +59,7 @@ pub fn uci_loop() {
                 println!("id name ChessEngine");
                 println!("id author Gemini CLI");
                 println!("option name Hash type spin default 64 min 1 max 4096");
+                println!("option name Threads type spin default 1 min 1 max 256");
                 println!("option name Ponder type check default false");
                 println!("option name BookPath type string default <empty>");
                 println!("option name SyzygyPath type string default <empty>");
@@ -146,6 +150,11 @@ fn handle_setoption(engine: &mut Engine, parts: &[&str]) {
         "Hash" => {
             if let Ok(size_mb) = value.parse::<usize>() {
                 engine.reset_tt(size_mb);
+            }
+        }
+        "Threads" => {
+            if let Ok(n) = value.parse::<usize>() {
+                engine.pool.resize(n);
             }
         }
         "BookPath" => {
@@ -251,9 +260,11 @@ fn parse_go(engine: &mut Engine, parts: &[&str]) {
     let stop = Arc::clone(&engine.stop);
     let pondering = Arc::clone(&engine.pondering);
     let tablebase = engine.tablebase.as_ref().map(Arc::clone);
+    let num_threads = engine.pool.num_threads;
 
     engine.search_handle = Some(thread::spawn(move || {
-        let result = iterative_deepening(&pos, &tt, &limits, &stop, &pondering, tablebase, |info| {
+        let pool = ThreadPool::new(num_threads);
+        let result = pool.search(&pos, tt, &limits, stop, pondering, tablebase, |info| {
             print_info(&info);
         });
 
