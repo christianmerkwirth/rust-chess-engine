@@ -1,6 +1,6 @@
 # Rust Chess Engine
 
-A high-performance, UCI-compliant chess engine written in Rust (~1800 ELO).
+A high-performance, UCI-compliant chess engine written in Rust.
 
 ## Features
 
