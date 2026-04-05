@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# dependencies = [
+#   "python-chess",
+#   "stockfish",
+# ]
+# ///
 """
 Play N games between chess_engine and Stockfish, then print results.
 

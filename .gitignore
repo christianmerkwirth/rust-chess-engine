@@ -1,1 +1,4 @@
 /target/
+/apps/
+cutechess.log
+*.pgn
