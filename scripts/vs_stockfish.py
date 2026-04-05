@@ -39,6 +39,8 @@ class UCIEngine:
         self._lock = threading.Lock()
 
     def send(self, cmd: str):
+        # Optional: uncomment to debug
+        # print(f"[{self.name}] >> {cmd}")
         self.proc.stdin.write(cmd + "\n")
         self.proc.stdin.flush()
 
@@ -185,11 +187,19 @@ def main():
         black.uci_init()
 
         if white_name.startswith("Stockfish"):
+            # Option A: Skill Level (0-20)
             white.set_option("Skill Level", args.skill)
-            white.set_option("UCI_LimitStrength", "true")
+            # Option B: UCI_Elo (if you prefer, uncomment these and maybe add a CLI flag)
+            # white.set_option("UCI_LimitStrength", "true")
+            # white.set_option("UCI_Elo", 1500)
+            white.send("isready")
+            white.read_until("readyok")
         if black_name.startswith("Stockfish"):
             black.set_option("Skill Level", args.skill)
-            black.set_option("UCI_LimitStrength", "true")
+            # black.set_option("UCI_LimitStrength", "true")
+            # black.set_option("UCI_Elo", 1500)
+            black.send("isready")
+            black.read_until("readyok")
 
         print(f"Game {g:2d}: {white_name:30s} (W) vs {black_name:30s} (B) ... ", end="", flush=True)
 
