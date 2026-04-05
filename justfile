@@ -64,7 +64,7 @@ puzzle: release
 
 # Play games vs Stockfish: `just vs-stockfish [games] [skill]`  e.g. `just vs-stockfish 10 5`
 vs-stockfish games="7" skill="3": release
-    uv run scripts/vs_stockfish.py --games {{games}} --skill {{skill}}
+    python3 -m uv run scripts/vs_stockfish.py --games {{games}} --skill {{skill}}
 
 # Remove build artefacts
 clean:

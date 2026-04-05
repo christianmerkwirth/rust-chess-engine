@@ -159,7 +159,7 @@ def main():
     ap.add_argument("--skill",    type=int, default=3,    help="Stockfish Skill Level (0-20)")
     ap.add_argument("--movetime", type=int, default=100,  help="Milliseconds per move")
     ap.add_argument("--engine",   type=str, default="./target/release/chess_engine")
-    ap.add_argument("--stockfish",type=str, default="/usr/games/stockfish")
+    ap.add_argument("--stockfish",type=str, default="stockfish")
     args = ap.parse_args()
 
     print(f"Match: chess_engine vs Stockfish (Skill {args.skill})")
