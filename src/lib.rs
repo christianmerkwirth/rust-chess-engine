@@ -1,3 +1,10 @@
 pub mod bitboard;
 pub mod board;
+pub mod book;
+pub mod eval;
+pub mod movegen;
+pub mod search;
+pub mod tablebase;
 pub mod types;
+pub mod uci;
+pub mod time;
