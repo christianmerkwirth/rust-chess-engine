@@ -31,48 +31,139 @@ struct BookEntry {
 }
 
 impl PolyglotBook {
+    /// Open a Polyglot .bin file. The file size must be a multiple of 16 bytes.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, BookError> {
         let file = File::open(path)?;
-        let metadata = file.metadata()?;
-        let len = metadata.len();
+        let len = file.metadata()?.len();
         if len % 16 != 0 {
             return Err(BookError::InvalidFile);
         }
-        Ok(PolyglotBook {
-            file,
-            num_entries: len / 16,
-        })
+        Ok(PolyglotBook { file, num_entries: len / 16 })
     }
 
-    pub fn probe(&self, _pos: &Position) -> Option<Move> {
-        // STUB: always returns None — tests will fail until real implementation added
+    /// Look up `pos` in the book. Returns a weighted-randomly selected move,
+    /// or `None` if the position is not in the book.
+    pub fn probe(&self, pos: &Position) -> Option<Move> {
+        let key = polyglot_hash(pos);
+
+        // Binary search for the first entry with this key (book is sorted by key).
+        let mut lo = 0u64;
+        let mut hi = self.num_entries;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let entry = self.read_entry(mid).ok()?;
+            if entry.key < key {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        // Collect all consecutive entries that share this key.
+        let mut entries = Vec::new();
+        let mut idx = lo;
+        while idx < self.num_entries {
+            let entry = self.read_entry(idx).ok()?;
+            if entry.key != key {
+                break;
+            }
+            entries.push(entry);
+            idx += 1;
+        }
+
+        if entries.is_empty() {
+            return None;
+        }
+
+        // Weighted random selection.
+        let total_weight: u32 = entries.iter().map(|e| e.weight as u32).sum();
+        if total_weight == 0 {
+            let i = rand::thread_rng().gen_range(0..entries.len());
+            return decode_polyglot_move(entries[i].raw_move, pos);
+        }
+
+        let mut r = rand::thread_rng().gen_range(0..total_weight);
+        for entry in &entries {
+            if r < entry.weight as u32 {
+                return decode_polyglot_move(entry.raw_move, pos);
+            }
+            r -= entry.weight as u32;
+        }
         None
     }
 
     fn read_entry(&self, idx: u64) -> Result<BookEntry, std::io::Error> {
         let mut file = &self.file;
         file.seek(SeekFrom::Start(idx * 16))?;
-        let mut buffer = [0u8; 16];
-        file.read_exact(&mut buffer)?;
+        let mut buf = [0u8; 16];
+        file.read_exact(&mut buf)?;
         Ok(BookEntry {
-            key: u64::from_be_bytes(buffer[0..8].try_into().unwrap()),
-            raw_move: u16::from_be_bytes(buffer[8..10].try_into().unwrap()),
-            weight: u16::from_be_bytes(buffer[10..12].try_into().unwrap()),
-            _learn: u32::from_be_bytes(buffer[12..16].try_into().unwrap()),
+            key:      u64::from_be_bytes(buf[0..8].try_into().unwrap()),
+            raw_move: u16::from_be_bytes(buf[8..10].try_into().unwrap()),
+            weight:   u16::from_be_bytes(buf[10..12].try_into().unwrap()),
+            _learn:   u32::from_be_bytes(buf[12..16].try_into().unwrap()),
         })
     }
 }
 
-/// Compute the Polyglot Zobrist hash for `pos` using shakmaty's implementation,
-/// which matches the standard Polyglot random table exactly.
-pub fn polyglot_hash(_pos: &Position) -> u64 {
-    // STUB: returns wrong value — tests will fail until real implementation added
-    0
+/// Compute the Polyglot Zobrist hash for `pos`.
+///
+/// Uses shakmaty's built-in implementation, which uses the canonical Polyglot
+/// random-number table and `EnPassantMode::Legal` (en-passant square is only
+/// included when a capturing pawn actually exists).
+pub fn polyglot_hash(pos: &Position) -> u64 {
+    use shakmaty::{CastlingMode, Chess, EnPassantMode};
+    use shakmaty::fen::Fen;
+    use shakmaty::zobrist::{Zobrist64, ZobristHash};
+
+    let fen_str = pos.to_fen();
+    let Ok(fen) = fen_str.parse::<Fen>() else { return 0 };
+    let Ok(chess): Result<Chess, _> = fen.into_position(CastlingMode::Standard) else { return 0 };
+    chess.zobrist_hash::<Zobrist64>(EnPassantMode::Legal).0
 }
 
-fn decode_polyglot_move(_raw: u16, _pos: &Position) -> Option<Move> {
-    // STUB: returns None — tests will fail until real implementation added
-    None
+/// Decode a 16-bit Polyglot move into the engine's `Move` type.
+///
+/// Bit layout: `to_file[2:0] | to_rank[5:3] | from_file[8:6] | from_rank[11:9] | promo[14:12]`
+///
+/// Polyglot encodes castling as king-to-rook (e.g., e1h1); this function
+/// converts it to king-to-destination (e1g1).
+fn decode_polyglot_move(raw: u16, pos: &Position) -> Option<Move> {
+    let to_file  = (raw & 0x7) as u8;
+    let to_rank  = ((raw >> 3)  & 0x7) as u8;
+    let from_file = ((raw >> 6) & 0x7) as u8;
+    let from_rank = ((raw >> 9) & 0x7) as u8;
+    let promo    = ((raw >> 12) & 0x7) as u8;
+
+    let from = Square::from_file_rank(from_file, from_rank);
+    let to   = Square::from_file_rank(to_file,   to_rank);
+
+    let (_, piece) = pos.piece_at(from)?;
+
+    // Castling: Polyglot encodes as king-to-rook; convert to king-to-destination.
+    if piece == Piece::King {
+        // White
+        if from == Square(4) {
+            if to == Square(7) { return Some(Move::new(Square(4), Square(6), 3, 0)); } // e1h1→e1g1
+            if to == Square(0) { return Some(Move::new(Square(4), Square(2), 3, 0)); } // e1a1→e1c1
+        }
+        // Black
+        if from == Square(60) {
+            if to == Square(63) { return Some(Move::new(Square(60), Square(62), 3, 0)); } // e8h8→e8g8
+            if to == Square(56) { return Some(Move::new(Square(60), Square(58), 3, 0)); } // e8a8→e8c8
+        }
+    }
+
+    if promo > 0 {
+        // Polyglot promotion values: 1=knight, 2=bishop, 3=rook, 4=queen
+        // Engine promo values:        0=knight, 1=bishop, 2=rook,  3=queen
+        let promo_piece = (promo - 1).min(3);
+        Some(Move::new(from, to, 1, promo_piece))
+    } else {
+        // En-passant: pawn moving to the en-passant capture square
+        let flags = if piece == Piece::Pawn && Some(to) == pos.en_passant_square() { 2 } else { 0 };
+        Some(Move::new(from, to, flags, 0))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +209,7 @@ mod tests {
 
     #[test]
     fn test_polyglot_hash_after_e4() {
+        crate::movegen::magics::init();
         let mut pos = Position::startpos();
         let moves = crate::movegen::generate_moves(&pos);
         let e4 = (&moves).into_iter().find(|m| m.to_uci() == "e2e4").unwrap();
@@ -163,7 +255,7 @@ mod tests {
     fn test_book_probe_unknown_position_returns_none() {
         let path = tmp("test_book_probe_unknown.bin");
         // Write one entry for a key that is NOT the startpos hash
-        let mut data = make_entry(0xDEADBEEF_00000000, 4, 1, 4, 3, 0, 100);
+        let data = make_entry(0xDEADBEEF_00000000, 4, 1, 4, 3, 0, 100);
         std::fs::write(&path, &data).unwrap();
         let book = PolyglotBook::open(&path).unwrap();
         let pos = Position::startpos();
@@ -200,11 +292,11 @@ mod tests {
     #[test]
     fn test_book_probe_weighted_selection() {
         // Write two moves for startpos: e2e4 (weight=900) and d2d4 (weight=100).
-        // Over 1000 probes, e2e4 should appear approximately 9× more often than d2d4.
+        // Over many probes, e2e4 should appear approximately 9× more often than d2d4.
         let key: u64 = 0x463b96181691fc9c;
         let path = tmp("test_book_weights.bin");
         let mut data = Vec::new();
-        // e2e4: from=(4,1) to=(4,3) — must sort entries by key (same key here)
+        // e2e4: from=(4,1) to=(4,3)
         data.extend_from_slice(&make_entry(key, 4, 1, 4, 3, 0, 900));
         // d2d4: from=(3,1) to=(3,3)
         data.extend_from_slice(&make_entry(key, 3, 1, 3, 3, 0, 100));

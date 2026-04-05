@@ -7,6 +7,7 @@ edition = "2021"
 name = "chess_engine"
 path = "src/lib.rs"
 
-[[bin]]
-name = "chess_engine"
-path = "src/main.rs"
+[dependencies]
+shakmaty = "0.26"
+shakmaty-syzygy = "0.24.0"
+rand = "0.8.5"
