@@ -160,10 +160,7 @@ fn sliding_attack(sq: Square, occ: Bitboard, deltas: &[(i32, i32)]) -> Bitboard 
 impl Position {
     /// Standard chess starting position.
     pub fn startpos() -> Position {
-        Position::from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        )
-        .unwrap()
+        Position::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
     }
 
     /// Parse a FEN string into a `Position`.
@@ -249,12 +246,16 @@ impl Position {
 
         // --- clocks (optional; default 0/1) ---
         let halfmove_clock = if parts.len() > 4 {
-            parts[4].parse::<u32>().map_err(|_| FenError::InvalidClocks)?
+            parts[4]
+                .parse::<u32>()
+                .map_err(|_| FenError::InvalidClocks)?
         } else {
             0
         };
         let fullmove_number = if parts.len() > 5 {
-            parts[5].parse::<u32>().map_err(|_| FenError::InvalidClocks)?
+            parts[5]
+                .parse::<u32>()
+                .map_err(|_| FenError::InvalidClocks)?
         } else {
             1
         };
@@ -487,12 +488,12 @@ impl Position {
         // King move: revoke both rights for that color
         if moving_piece == Piece::King {
             match us {
-                Color::White => {
-                    self.castling.remove(CastlingRights::WK | CastlingRights::WQ)
-                }
-                Color::Black => {
-                    self.castling.remove(CastlingRights::BK | CastlingRights::BQ)
-                }
+                Color::White => self
+                    .castling
+                    .remove(CastlingRights::WK | CastlingRights::WQ),
+                Color::Black => self
+                    .castling
+                    .remove(CastlingRights::BK | CastlingRights::BQ),
             }
         }
         // Rook origin squares: touching them (move or capture) revokes the right
@@ -549,20 +550,16 @@ impl Position {
         }
 
         // Diagonal sliders (bishop / queen)
-        let enemy_diag =
-            self.pieces(enemy, Piece::Bishop) | self.pieces(enemy, Piece::Queen);
-        if !(sliding_attack(king_sq, occ, &[(1, 1), (1, -1), (-1, 1), (-1, -1)])
-            & enemy_diag)
+        let enemy_diag = self.pieces(enemy, Piece::Bishop) | self.pieces(enemy, Piece::Queen);
+        if !(sliding_attack(king_sq, occ, &[(1, 1), (1, -1), (-1, 1), (-1, -1)]) & enemy_diag)
             .is_empty()
         {
             return true;
         }
 
         // Straight sliders (rook / queen)
-        let enemy_straight =
-            self.pieces(enemy, Piece::Rook) | self.pieces(enemy, Piece::Queen);
-        if !(sliding_attack(king_sq, occ, &[(1, 0), (-1, 0), (0, 1), (0, -1)])
-            & enemy_straight)
+        let enemy_straight = self.pieces(enemy, Piece::Rook) | self.pieces(enemy, Piece::Queen);
+        if !(sliding_attack(king_sq, occ, &[(1, 0), (-1, 0), (0, 1), (0, -1)]) & enemy_straight)
             .is_empty()
         {
             return true;
@@ -592,6 +589,10 @@ impl Position {
     /// All occupied squares.
     pub fn occupancy(&self) -> Bitboard {
         self.color_bb[0] | self.color_bb[1]
+    }
+
+    pub fn occupancy_color(&self, color: Color) -> Bitboard {
+        self.color_bb[color as usize]
     }
 
     pub fn side_to_move(&self) -> Color {
@@ -634,6 +635,13 @@ impl Position {
             h ^= zobrist::side_key();
         }
         h
+    }
+
+    /// Convert a UCI move string (e.g., "e2e4", "e7e8q") to a `Move` in this
+    /// position.
+    pub fn parse_move(&self, uci: &str) -> Option<Move> {
+        let moves = crate::movegen::generate_moves(self);
+        (&moves).into_iter().find(|&m| m.to_uci() == uci)
     }
 }
 
@@ -732,7 +740,9 @@ mod tests {
         let pos = p("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
         assert_eq!(pos.side_to_move(), Color::Black);
         assert_eq!(pos.en_passant_square(), Some(Square::from_file_rank(4, 2)));
-        assert!(pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(4, 3)));
+        assert!(pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(4, 3)));
     }
 
     #[test]
@@ -764,10 +774,9 @@ mod tests {
 
     #[test]
     fn test_from_fen_invalid_side() {
-        assert!(Position::from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1"
-        )
-        .is_err());
+        assert!(
+            Position::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1").is_err()
+        );
     }
 
     // --- to_fen round-trip ---
@@ -810,17 +819,31 @@ mod tests {
     #[test]
     fn test_make_move_quiet_pawn() {
         let mut pos = Position::startpos();
-        let mv = Move::new(Square::from_file_rank(4, 1), Square::from_file_rank(4, 2), 0, 0);
+        let mv = Move::new(
+            Square::from_file_rank(4, 1),
+            Square::from_file_rank(4, 2),
+            0,
+            0,
+        );
         pos.make_move(mv);
-        assert!(pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(4, 2)));
-        assert!(!pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(4, 1)));
+        assert!(pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(4, 2)));
+        assert!(!pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(4, 1)));
         assert_eq!(pos.side_to_move(), Color::Black);
     }
 
     #[test]
     fn test_make_move_double_pawn_push_sets_ep() {
         let mut pos = Position::startpos();
-        let mv = Move::new(Square::from_file_rank(4, 1), Square::from_file_rank(4, 3), 0, 0);
+        let mv = Move::new(
+            Square::from_file_rank(4, 1),
+            Square::from_file_rank(4, 3),
+            0,
+            0,
+        );
         pos.make_move(mv);
         assert_eq!(pos.en_passant_square(), Some(Square::from_file_rank(4, 2)));
     }
@@ -828,7 +851,12 @@ mod tests {
     #[test]
     fn test_make_move_single_push_clears_ep() {
         let mut pos = p("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
-        let mv = Move::new(Square::from_file_rank(3, 6), Square::from_file_rank(3, 5), 0, 0);
+        let mv = Move::new(
+            Square::from_file_rank(3, 6),
+            Square::from_file_rank(3, 5),
+            0,
+            0,
+        );
         pos.make_move(mv);
         assert_eq!(pos.en_passant_square(), None);
     }
@@ -838,10 +866,19 @@ mod tests {
     #[test]
     fn test_make_move_capture() {
         let mut pos = p("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2");
-        let mv = Move::new(Square::from_file_rank(4, 3), Square::from_file_rank(3, 4), 0, 0);
+        let mv = Move::new(
+            Square::from_file_rank(4, 3),
+            Square::from_file_rank(3, 4),
+            0,
+            0,
+        );
         pos.make_move(mv);
-        assert!(pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(3, 4)));
-        assert!(!pos.pieces(Color::Black, Piece::Pawn).is_set(Square::from_file_rank(3, 4)));
+        assert!(pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(3, 4)));
+        assert!(!pos
+            .pieces(Color::Black, Piece::Pawn)
+            .is_set(Square::from_file_rank(3, 4)));
     }
 
     // --- make_move: en passant ---
@@ -849,13 +886,23 @@ mod tests {
     #[test]
     fn test_make_move_en_passant() {
         // e5 pawn captures d6 en passant (black just pushed d7-d5)
-        let mut pos =
-            p("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
-        let mv = Move::new(Square::from_file_rank(4, 4), Square::from_file_rank(3, 5), 2, 0);
+        let mut pos = p("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+        let mv = Move::new(
+            Square::from_file_rank(4, 4),
+            Square::from_file_rank(3, 5),
+            2,
+            0,
+        );
         pos.make_move(mv);
-        assert!(pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(3, 5)));
-        assert!(!pos.pieces(Color::Black, Piece::Pawn).is_set(Square::from_file_rank(3, 4)));
-        assert!(!pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(4, 4)));
+        assert!(pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(3, 5)));
+        assert!(!pos
+            .pieces(Color::Black, Piece::Pawn)
+            .is_set(Square::from_file_rank(3, 4)));
+        assert!(!pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(4, 4)));
     }
 
     // --- make_move: castling ---
@@ -912,8 +959,12 @@ mod tests {
             1,
             3,
         ));
-        assert!(pos.pieces(Color::White, Piece::Queen).is_set(Square::from_file_rank(0, 7)));
-        assert!(!pos.pieces(Color::White, Piece::Pawn).is_set(Square::from_file_rank(0, 6)));
+        assert!(pos
+            .pieces(Color::White, Piece::Queen)
+            .is_set(Square::from_file_rank(0, 7)));
+        assert!(!pos
+            .pieces(Color::White, Piece::Pawn)
+            .is_set(Square::from_file_rank(0, 6)));
     }
 
     #[test]
@@ -925,7 +976,9 @@ mod tests {
             1,
             0,
         ));
-        assert!(pos.pieces(Color::White, Piece::Knight).is_set(Square::from_file_rank(0, 7)));
+        assert!(pos
+            .pieces(Color::White, Piece::Knight)
+            .is_set(Square::from_file_rank(0, 7)));
     }
 
     #[test]
@@ -937,7 +990,9 @@ mod tests {
             1,
             2,
         ));
-        assert!(pos.pieces(Color::White, Piece::Rook).is_set(Square::from_file_rank(0, 7)));
+        assert!(pos
+            .pieces(Color::White, Piece::Rook)
+            .is_set(Square::from_file_rank(0, 7)));
     }
 
     #[test]
@@ -949,7 +1004,9 @@ mod tests {
             1,
             1,
         ));
-        assert!(pos.pieces(Color::White, Piece::Bishop).is_set(Square::from_file_rank(0, 7)));
+        assert!(pos
+            .pieces(Color::White, Piece::Bishop)
+            .is_set(Square::from_file_rank(0, 7)));
     }
 
     // --- halfmove clock ---
@@ -970,8 +1027,7 @@ mod tests {
 
     #[test]
     fn test_halfmove_clock_capture_resets() {
-        let mut pos =
-            p("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 5 2");
+        let mut pos = p("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 5 2");
         pos.make_move(Move::new(
             Square::from_file_rank(4, 3),
             Square::from_file_rank(3, 4),
@@ -1101,19 +1157,15 @@ mod tests {
 
     #[test]
     fn test_zobrist_different_positions_differ() {
-        let pos1 =
-            p("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
-        let pos2 =
-            p("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1");
+        let pos1 = p("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        let pos2 = p("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1");
         assert_ne!(pos1.hash(), pos2.hash());
     }
 
     #[test]
     fn test_zobrist_same_position_same_hash() {
-        let pos1 =
-            p("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
-        let pos2 =
-            p("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+        let pos1 = p("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+        let pos2 = p("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
         assert_eq!(pos1.hash(), pos2.hash());
     }
 

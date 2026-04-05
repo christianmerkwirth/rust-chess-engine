@@ -1,13 +1,13 @@
 use std::io::{self, BufRead, Write};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use crate::board::Position;
 use crate::book::PolyglotBook;
-use crate::search::tt::TranspositionTable;
 use crate::search::smp::ThreadPool;
+use crate::search::tt::TranspositionTable;
 use crate::search::SearchInfo;
 use crate::tablebase::SyzygyTablebase;
 use crate::time::{self, GoParams};
@@ -21,6 +21,12 @@ pub struct Engine {
     pub book: Option<PolyglotBook>,
     pub tablebase: Option<Arc<SyzygyTablebase>>,
     pub pool: ThreadPool,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Engine {
@@ -140,8 +146,12 @@ fn handle_setoption(engine: &mut Engine, parts: &[&str]) {
     // Find "name" and "value" tokens
     let name_idx = parts.iter().position(|&p| p == "name");
     let value_idx = parts.iter().position(|&p| p == "value");
-    let (Some(ni), Some(vi)) = (name_idx, value_idx) else { return };
-    if vi <= ni { return; }
+    let (Some(ni), Some(vi)) = (name_idx, value_idx) else {
+        return;
+    };
+    if vi <= ni {
+        return;
+    }
 
     let name: String = parts[ni + 1..vi].join(" ");
     let value: String = parts[vi + 1..].join(" ");
@@ -286,14 +296,18 @@ fn print_info(info: &SearchInfo) {
     };
 
     let pv_str: Vec<String> = info.pv.iter().map(|m| m.to_uci()).collect();
-    
+
     println!(
         "info depth {} score {} nodes {} time {} nps {} pv {}",
         info.depth,
         score_str,
         info.nodes,
         info.time,
-        if info.time > 0 { info.nodes * 1000 / info.time as u64 } else { 0 },
+        if info.time > 0 {
+            info.nodes * 1000 / info.time as u64
+        } else {
+            0
+        },
         pv_str.join(" ")
     );
 }

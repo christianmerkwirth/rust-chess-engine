@@ -1,12 +1,12 @@
+use crate::board::Position;
+use crate::eval::evaluate;
+use crate::movegen::{generate_captures, generate_moves};
+use crate::search::ordering::{order_moves, KillerTable};
+use crate::search::tt::{TTData, TTFlag, TranspositionTable};
+use crate::tablebase::{SyzygyTablebase, WdlResult};
+use crate::types::Move;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use crate::board::Position;
-use crate::types::Move;
-use crate::movegen::{generate_moves, generate_captures};
-use crate::eval::evaluate;
-use crate::search::tt::{TranspositionTable, TTData, TTFlag};
-use crate::search::ordering::{order_moves, KillerTable};
-use crate::tablebase::{SyzygyTablebase, WdlResult};
 
 pub const MATE_SCORE: i32 = 30000;
 pub const INFINITY: i32 = 32000;
@@ -81,11 +81,15 @@ pub fn search(
             match data.flag {
                 TTFlag::Exact => return score,
                 TTFlag::LowerBound => {
-                    if score >= beta { return score; }
+                    if score >= beta {
+                        return score;
+                    }
                     alpha = alpha.max(score);
                 }
                 TTFlag::UpperBound => {
-                    if score <= alpha { return score; }
+                    if score <= alpha {
+                        return score;
+                    }
                     beta = beta.min(score);
                 }
             }
@@ -97,11 +101,11 @@ pub fn search(
         if pos.occupancy().count() <= 6 {
             if let Some(wdl) = tb.probe_wdl(pos) {
                 let score = match wdl {
-                    WdlResult::Win         =>  TABLEBASE_WIN,
-                    WdlResult::Loss        => -TABLEBASE_WIN,
-                    WdlResult::CursedWin   =>  1,
+                    WdlResult::Win => TABLEBASE_WIN,
+                    WdlResult::Loss => -TABLEBASE_WIN,
+                    WdlResult::CursedWin => 1,
                     WdlResult::BlessedLoss => -1,
-                    WdlResult::Draw        =>  0,
+                    WdlResult::Draw => 0,
                 };
                 return score;
             }
@@ -164,22 +168,20 @@ pub fn search(
         TTFlag::UpperBound
     };
 
-    tt.store(pos.hash(), TTData {
-        depth: depth as i8,
-        score: best_score as i16,
-        flag,
-        best_move,
-    });
+    tt.store(
+        pos.hash(),
+        TTData {
+            depth: depth as i8,
+            score: best_score as i16,
+            flag,
+            best_move,
+        },
+    );
 
     best_score
 }
 
-pub fn quiescence(
-    pos: &Position,
-    state: &mut SearchState,
-    mut alpha: i32,
-    beta: i32,
-) -> i32 {
+pub fn quiescence(pos: &Position, state: &mut SearchState, mut alpha: i32, beta: i32) -> i32 {
     state.nodes += 1;
 
     let stand_pat = evaluate(pos);
@@ -236,30 +238,33 @@ mod tests {
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
         let mut state = SearchState::new(&stop, &pondering, None);
-        
+
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);
-        
+
         let data = tt.probe(pos.hash()).unwrap();
         assert_eq!(data.best_move.from_sq(), Square::from_file_rank(0, 6)); // a7
-        assert_eq!(data.best_move.to_sq(), Square::from_file_rank(0, 7));   // a8
+        assert_eq!(data.best_move.to_sq(), Square::from_file_rank(0, 7)); // a8
     }
 
     #[test]
     fn test_search_finds_forced_mate_in_1() {
         crate::movegen::magics::init();
         // White to move, mate in 1 with Qf7#
-        let pos = Position::from_fen("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1").unwrap();
+        let pos = Position::from_fen(
+            "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1",
+        )
+        .unwrap();
         let tt = TranspositionTable::new(1);
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
         let mut state = SearchState::new(&stop, &pondering, None);
-        
+
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);
-        
+
         let data = tt.probe(pos.hash()).unwrap();
         assert_eq!(data.best_move.from_sq(), Square::from_file_rank(7, 4)); // h5
-        assert_eq!(data.best_move.to_sq(), Square::from_file_rank(5, 6));   // f7
+        assert_eq!(data.best_move.to_sq(), Square::from_file_rank(5, 6)); // f7
     }
 }

@@ -1,6 +1,6 @@
 use std::io::Write;
-use std::process::{Command, Stdio, Child};
-use std::io::{BufReader, BufRead};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
 
 struct UciEngine {
     child: Child,
@@ -27,7 +27,9 @@ impl UciEngine {
 
     fn read_line(&mut self) -> String {
         let mut line = String::new();
-        self.reader.read_line(&mut line).expect("Failed to read from stdout");
+        self.reader
+            .read_line(&mut line)
+            .expect("Failed to read from stdout");
         line.trim().to_string()
     }
 
@@ -88,8 +90,16 @@ fn test_uci_movetime() {
     engine.wait_for("bestmove");
     let elapsed = start.elapsed();
     // Allow some margin for initialization and overhead
-    assert!(elapsed.as_millis() >= 80, "Too fast: {}ms", elapsed.as_millis());
-    assert!(elapsed.as_millis() < 500, "Too slow: {}ms", elapsed.as_millis());
+    assert!(
+        elapsed.as_millis() >= 80,
+        "Too fast: {}ms",
+        elapsed.as_millis()
+    );
+    assert!(
+        elapsed.as_millis() < 500,
+        "Too slow: {}ms",
+        elapsed.as_millis()
+    );
 }
 
 #[test]
@@ -99,15 +109,15 @@ fn test_uci_ponderhit() {
     engine.wait_for("readyok");
     // Start pondering with a generous time limit for when it hits
     engine.send("go ponder wtime 100000 btime 100000");
-    
+
     // Wait for some info lines to confirm search is running
     engine.wait_for("info depth");
-    
+
     // Wait a bit to ensure it doesn't stop on its own
     std::thread::sleep(std::time::Duration::from_millis(100));
-    
+
     // It should still be searching (no bestmove yet)
-    // We can't easily check for absence of bestmove without a timeout, 
+    // We can't easily check for absence of bestmove without a timeout,
     // but we can send ponderhit and check for bestmove after.
     engine.send("ponderhit");
     engine.wait_for("bestmove");
@@ -120,9 +130,9 @@ fn test_uci_ponder_stop() {
     engine.wait_for("readyok");
     engine.send("go ponder wtime 100000 btime 100000");
     engine.wait_for("info depth");
-    
+
     std::thread::sleep(std::time::Duration::from_millis(100));
-    
+
     engine.send("stop");
     engine.wait_for("bestmove");
 }

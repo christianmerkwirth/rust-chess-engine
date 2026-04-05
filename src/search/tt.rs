@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::types::Move;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TTFlag {
@@ -98,7 +98,7 @@ impl TranspositionTable {
         let entry = &self.entries[index];
 
         let packed = data.pack();
-        
+
         // XOR trick: write word1 then word0
         entry.word1.store(packed, Ordering::Relaxed);
         entry.word0.store(hash ^ packed, Ordering::Relaxed);

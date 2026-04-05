@@ -1,16 +1,16 @@
 pub mod alphabeta;
-pub mod tt;
 pub mod ordering;
 pub mod smp;
+pub mod tt;
 
+use crate::board::Position;
+use crate::search::alphabeta::{search, SearchState, INFINITY};
+use crate::search::tt::TranspositionTable;
+use crate::tablebase::SyzygyTablebase;
+use crate::types::Move;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use crate::board::Position;
-use crate::types::Move;
-use crate::search::alphabeta::{SearchState, search, INFINITY};
-use crate::search::tt::TranspositionTable;
-use crate::tablebase::SyzygyTablebase;
 
 #[derive(Clone, Debug, Default)]
 pub struct SearchLimits {
@@ -34,6 +34,7 @@ pub struct SearchResult {
     pub ponder_move: Option<Move>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn iterative_deepening(
     pos: &Position,
     tt: &TranspositionTable,
@@ -50,7 +51,11 @@ pub fn iterative_deepening(
     let mut best_score = 0;
     let mut best_move = {
         let moves = crate::movegen::generate_moves(pos);
-        if moves.is_empty() { Move::NONE } else { moves[0] }
+        if moves.is_empty() {
+            Move::NONE
+        } else {
+            moves[0]
+        }
     };
     let mut ponder_move = None;
 
@@ -94,7 +99,7 @@ pub fn iterative_deepening(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        
+
         // If we found mate, we can stop
         if best_score.abs() > alphabeta::MATE_SCORE - 1000 {
             break;
@@ -111,12 +116,14 @@ pub fn iterative_deepening(
 fn get_pv(pos: &Position, tt: &TranspositionTable, depth: i32) -> Vec<Move> {
     let mut pv = Vec::new();
     let mut current_pos = pos.clone();
-    
+
     for _ in 0..depth {
         if let Some(data) = tt.probe(current_pos.hash()) {
             let mv = data.best_move;
-            if mv == Move::NONE { break; }
-            
+            if mv == Move::NONE {
+                break;
+            }
+
             // Simple legality check
             let moves = crate::movegen::generate_moves(&current_pos);
             let mut found = false;
@@ -126,7 +133,9 @@ fn get_pv(pos: &Position, tt: &TranspositionTable, depth: i32) -> Vec<Move> {
                     break;
                 }
             }
-            if !found { break; }
+            if !found {
+                break;
+            }
 
             pv.push(mv);
             current_pos.make_move(mv);

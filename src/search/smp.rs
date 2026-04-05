@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 use crate::board::Position;
-use crate::search::{iterative_deepening, SearchInfo, SearchLimits, SearchResult};
 use crate::search::tt::TranspositionTable;
+use crate::search::{iterative_deepening, SearchInfo, SearchLimits, SearchResult};
 use crate::tablebase::SyzygyTablebase;
 
 pub struct ThreadPool {
@@ -13,7 +13,9 @@ pub struct ThreadPool {
 
 impl ThreadPool {
     pub fn new(num_threads: usize) -> Self {
-        ThreadPool { num_threads: num_threads.max(1) }
+        ThreadPool {
+            num_threads: num_threads.max(1),
+        }
     }
 
     pub fn resize(&mut self, num_threads: usize) {
@@ -26,6 +28,7 @@ impl ThreadPool {
     /// deepening with slight depth variation, writing results to the shared TT.
     /// The main thread (thread 0) runs standard search and reports info via the
     /// callback.  On return, all helpers have been joined.
+    #[allow(clippy::too_many_arguments)]
     pub fn search(
         &self,
         pos: &Position,
@@ -98,13 +101,20 @@ mod tests {
         let tt = Arc::new(TranspositionTable::new(1));
         let stop = Arc::new(AtomicBool::new(false));
         let pondering = Arc::new(AtomicBool::new(false));
-        let limits = SearchLimits { depth: Some(3), ..Default::default() };
+        let limits = SearchLimits {
+            depth: Some(3),
+            ..Default::default()
+        };
 
         let pool = ThreadPool::new(num_threads);
         let result = pool.search(&pos, tt, &limits, stop, pondering, None, |_| {});
 
-        assert_ne!(result.best_move, crate::types::Move::NONE,
-            "ThreadPool with {} threads must return a valid move", num_threads);
+        assert_ne!(
+            result.best_move,
+            crate::types::Move::NONE,
+            "ThreadPool with {} threads must return a valid move",
+            num_threads
+        );
     }
 
     #[test]

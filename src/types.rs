@@ -14,6 +14,12 @@ impl Square {
     pub fn rank(self) -> u8 {
         self.0 / 8
     }
+
+    pub fn to_uci(self) -> String {
+        let file = (b'a' + self.file()) as char;
+        let rank = (b'1' + self.rank()) as char;
+        format!("{}{}", file, rank)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -89,6 +95,22 @@ impl Move {
 
     pub fn is_castling(self) -> bool {
         self.flags() == 3
+    }
+
+    pub fn to_uci(self) -> String {
+        let from = self.from_sq().to_uci();
+        let to = self.to_sq().to_uci();
+        let mut s = format!("{}{}", from, to);
+        if self.is_promotion() {
+            let p = match self.promotion_piece() {
+                Piece::Knight => 'n',
+                Piece::Bishop => 'b',
+                Piece::Rook => 'r',
+                _ => 'q',
+            };
+            s.push(p);
+        }
+        s
     }
 }
 

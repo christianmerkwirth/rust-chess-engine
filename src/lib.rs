@@ -5,6 +5,6 @@ pub mod eval;
 pub mod movegen;
 pub mod search;
 pub mod tablebase;
+pub mod time;
 pub mod types;
 pub mod uci;
-pub mod time;

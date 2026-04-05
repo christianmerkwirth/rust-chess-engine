@@ -1,0 +1,129 @@
+use crate::board::Position;
+use crate::movegen::MoveList;
+use crate::types::{Move, Piece};
+
+const PIECE_VALUES: [i32; 6] = [100, 320, 330, 500, 900, 20000];
+
+pub struct KillerTable {
+    pub moves: [[Move; 2]; 256], // MAX_PLY = 256
+}
+
+impl Default for KillerTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl KillerTable {
+    pub fn new() -> Self {
+        Self {
+            moves: [[Move::NONE; 2]; 256],
+        }
+    }
+
+    pub fn store(&mut self, ply: usize, mv: Move) {
+        if self.moves[ply][0] != mv {
+            self.moves[ply][1] = self.moves[ply][0];
+            self.moves[ply][0] = mv;
+        }
+    }
+}
+
+pub fn order_moves(moves: &mut MoveList, pv_move: Move, killers: &[Move; 2], pos: &Position) {
+    let mut scores = [0i32; 256];
+
+    for i in 0..moves.len() {
+        let mv = moves[i];
+        let mut score = 0;
+
+        if mv == pv_move {
+            score = 10_000_000;
+        } else if let Some((_, victim)) = pos.piece_at(mv.to_sq()) {
+            let (_, attacker) = pos.piece_at(mv.from_sq()).unwrap();
+            score =
+                1_000_000 + PIECE_VALUES[victim as usize] * 10 - PIECE_VALUES[attacker as usize];
+        } else if mv.is_en_passant() {
+            score = 1_000_000 + PIECE_VALUES[Piece::Pawn as usize] * 10
+                - PIECE_VALUES[Piece::Pawn as usize];
+        } else if mv.is_promotion() {
+            score = 900_000 + PIECE_VALUES[mv.promotion_piece() as usize];
+        } else if mv == killers[0] {
+            score = 800_000;
+        } else if mv == killers[1] {
+            score = 700_000;
+        }
+
+        scores[i] = score;
+    }
+
+    // Selection sort
+    for i in 0..moves.len() {
+        let mut best_idx = i;
+        for j in i + 1..moves.len() {
+            if scores[j] > scores[best_idx] {
+                best_idx = j;
+            }
+        }
+        if best_idx != i {
+            moves.swap(i, best_idx);
+            scores.swap(i, best_idx);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::Position;
+    use crate::movegen::generate_moves;
+    use crate::types::Square;
+
+    #[test]
+    fn test_order_pv_move_first() {
+        crate::movegen::magics::init();
+        let pos = Position::startpos();
+        let mut moves = generate_moves(&pos);
+        let pv_move = Move::new(Square(12), Square(28), 0, 0); // e2e4
+
+        order_moves(&mut moves, pv_move, &[Move::NONE, Move::NONE], &pos);
+        assert_eq!(moves[0], pv_move);
+    }
+
+    #[test]
+    fn test_mvv_lva() {
+        crate::movegen::magics::init();
+        // Position where white pawn at d3 can capture queen at c4 and knight at e4
+        let pos = Position::from_fen("k7/8/8/8/2q1n3/3P4/8/K7 w - - 0 1").unwrap();
+        let mut moves = generate_moves(&pos);
+
+        order_moves(&mut moves, Move::NONE, &[Move::NONE, Move::NONE], &pos);
+
+        // PxQ (d3xc4) should come before PxN (d3xe4)
+        let pxc4 = Move::new(
+            Square::from_file_rank(3, 2),
+            Square::from_file_rank(2, 3),
+            0,
+            0,
+        );
+        let pxe4 = Move::new(
+            Square::from_file_rank(3, 2),
+            Square::from_file_rank(4, 3),
+            0,
+            0,
+        );
+
+        let mut found_pxc4 = false;
+        let mut found_pxe4 = false;
+
+        for i in 0..moves.len() {
+            if moves[i] == pxc4 {
+                assert!(!found_pxe4, "PxQ should come before PxN");
+                found_pxc4 = true;
+            } else if moves[i] == pxe4 {
+                found_pxe4 = true;
+            }
+        }
+        assert!(found_pxc4);
+        assert!(found_pxe4);
+    }
+}

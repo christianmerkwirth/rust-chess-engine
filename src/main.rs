@@ -1,3 +1,5 @@
+use chess_engine::uci;
+
 fn main() {
-    println!("chess_engine");
+    uci::uci_loop();
 }

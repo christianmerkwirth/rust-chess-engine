@@ -35,7 +35,12 @@ fn init_keys() -> ZobristKeys {
         *k = xorshift64(&mut s);
     }
     let side = xorshift64(&mut s);
-    ZobristKeys { pieces, castling, en_passant, side }
+    ZobristKeys {
+        pieces,
+        castling,
+        en_passant,
+        side,
+    }
 }
 
 fn keys() -> &'static ZobristKeys {

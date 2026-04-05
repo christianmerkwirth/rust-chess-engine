@@ -1,9 +1,9 @@
+use crate::board::Position;
+use crate::types::{Move, Piece, Square};
+use rand::Rng;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use rand::Rng;
-use crate::board::Position;
-use crate::types::{Move, Piece, Square};
 
 #[derive(Debug)]
 pub enum BookError {
@@ -38,7 +38,10 @@ impl PolyglotBook {
         if len % 16 != 0 {
             return Err(BookError::InvalidFile);
         }
-        Ok(PolyglotBook { file, num_entries: len / 16 })
+        Ok(PolyglotBook {
+            file,
+            num_entries: len / 16,
+        })
     }
 
     /// Look up `pos` in the book. Returns a weighted-randomly selected move,
@@ -98,10 +101,10 @@ impl PolyglotBook {
         let mut buf = [0u8; 16];
         file.read_exact(&mut buf)?;
         Ok(BookEntry {
-            key:      u64::from_be_bytes(buf[0..8].try_into().unwrap()),
+            key: u64::from_be_bytes(buf[0..8].try_into().unwrap()),
             raw_move: u16::from_be_bytes(buf[8..10].try_into().unwrap()),
-            weight:   u16::from_be_bytes(buf[10..12].try_into().unwrap()),
-            _learn:   u32::from_be_bytes(buf[12..16].try_into().unwrap()),
+            weight: u16::from_be_bytes(buf[10..12].try_into().unwrap()),
+            _learn: u32::from_be_bytes(buf[12..16].try_into().unwrap()),
         })
     }
 }
@@ -112,13 +115,17 @@ impl PolyglotBook {
 /// random-number table and `EnPassantMode::Legal` (en-passant square is only
 /// included when a capturing pawn actually exists).
 pub fn polyglot_hash(pos: &Position) -> u64 {
-    use shakmaty::{CastlingMode, Chess, EnPassantMode};
     use shakmaty::fen::Fen;
     use shakmaty::zobrist::{Zobrist64, ZobristHash};
+    use shakmaty::{CastlingMode, Chess, EnPassantMode};
 
     let fen_str = pos.to_fen();
-    let Ok(fen) = fen_str.parse::<Fen>() else { return 0 };
-    let Ok(chess): Result<Chess, _> = fen.into_position(CastlingMode::Standard) else { return 0 };
+    let Ok(fen) = fen_str.parse::<Fen>() else {
+        return 0;
+    };
+    let Ok(chess): Result<Chess, _> = fen.into_position(CastlingMode::Standard) else {
+        return 0;
+    };
     chess.zobrist_hash::<Zobrist64>(EnPassantMode::Legal).0
 }
 
@@ -129,14 +136,14 @@ pub fn polyglot_hash(pos: &Position) -> u64 {
 /// Polyglot encodes castling as king-to-rook (e.g., e1h1); this function
 /// converts it to king-to-destination (e1g1).
 fn decode_polyglot_move(raw: u16, pos: &Position) -> Option<Move> {
-    let to_file  = (raw & 0x7) as u8;
-    let to_rank  = ((raw >> 3)  & 0x7) as u8;
+    let to_file = (raw & 0x7) as u8;
+    let to_rank = ((raw >> 3) & 0x7) as u8;
     let from_file = ((raw >> 6) & 0x7) as u8;
     let from_rank = ((raw >> 9) & 0x7) as u8;
-    let promo    = ((raw >> 12) & 0x7) as u8;
+    let promo = ((raw >> 12) & 0x7) as u8;
 
     let from = Square::from_file_rank(from_file, from_rank);
-    let to   = Square::from_file_rank(to_file,   to_rank);
+    let to = Square::from_file_rank(to_file, to_rank);
 
     let (_, piece) = pos.piece_at(from)?;
 
@@ -144,13 +151,21 @@ fn decode_polyglot_move(raw: u16, pos: &Position) -> Option<Move> {
     if piece == Piece::King {
         // White
         if from == Square(4) {
-            if to == Square(7) { return Some(Move::new(Square(4), Square(6), 3, 0)); } // e1h1→e1g1
-            if to == Square(0) { return Some(Move::new(Square(4), Square(2), 3, 0)); } // e1a1→e1c1
+            if to == Square(7) {
+                return Some(Move::new(Square(4), Square(6), 3, 0));
+            } // e1h1→e1g1
+            if to == Square(0) {
+                return Some(Move::new(Square(4), Square(2), 3, 0));
+            } // e1a1→e1c1
         }
         // Black
         if from == Square(60) {
-            if to == Square(63) { return Some(Move::new(Square(60), Square(62), 3, 0)); } // e8h8→e8g8
-            if to == Square(56) { return Some(Move::new(Square(60), Square(58), 3, 0)); } // e8a8→e8c8
+            if to == Square(63) {
+                return Some(Move::new(Square(60), Square(62), 3, 0));
+            } // e8h8→e8g8
+            if to == Square(56) {
+                return Some(Move::new(Square(60), Square(58), 3, 0));
+            } // e8a8→e8c8
         }
     }
 
@@ -161,7 +176,11 @@ fn decode_polyglot_move(raw: u16, pos: &Position) -> Option<Move> {
         Some(Move::new(from, to, 1, promo_piece))
     } else {
         // En-passant: pawn moving to the en-passant capture square
-        let flags = if piece == Piece::Pawn && Some(to) == pos.en_passant_square() { 2 } else { 0 };
+        let flags = if piece == Piece::Pawn && Some(to) == pos.en_passant_square() {
+            2
+        } else {
+            0
+        };
         Some(Move::new(from, to, flags, 0))
     }
 }
@@ -178,7 +197,15 @@ mod tests {
 
     /// Build a 16-byte Polyglot book entry.
     /// raw_move bit layout: to_file[2:0] | to_rank[5:3] | from_file[8:6] | from_rank[11:9] | promo[14:12]
-    fn make_entry(key: u64, from_file: u8, from_rank: u8, to_file: u8, to_rank: u8, promo: u8, weight: u16) -> Vec<u8> {
+    fn make_entry(
+        key: u64,
+        from_file: u8,
+        from_rank: u8,
+        to_file: u8,
+        to_rank: u8,
+        promo: u8,
+        weight: u16,
+    ) -> Vec<u8> {
         let raw_move: u16 = (to_file as u16)
             | ((to_rank as u16) << 3)
             | ((from_file as u16) << 6)
@@ -221,7 +248,8 @@ mod tests {
     #[test]
     fn test_polyglot_hash_differs_by_position() {
         let pos1 = Position::startpos();
-        let pos2 = Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1").unwrap();
+        let pos2 = Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+            .unwrap();
         assert_ne!(polyglot_hash(&pos1), polyglot_hash(&pos2));
     }
 
@@ -235,7 +263,10 @@ mod tests {
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(&[0u8; 17]).unwrap(); // 17 bytes is not divisible by 16
         drop(f);
-        assert!(matches!(PolyglotBook::open(&path), Err(BookError::InvalidFile)));
+        assert!(matches!(
+            PolyglotBook::open(&path),
+            Err(BookError::InvalidFile)
+        ));
         std::fs::remove_file(&path).ok();
     }
 
@@ -312,7 +343,12 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(e4_count > d4_count, "higher-weight move should appear more often (e4={}, d4={})", e4_count, d4_count);
+        assert!(
+            e4_count > d4_count,
+            "higher-weight move should appear more often (e4={}, d4={})",
+            e4_count,
+            d4_count
+        );
         std::fs::remove_file(&path).ok();
     }
 
@@ -323,7 +359,7 @@ mod tests {
     #[test]
     fn test_decode_polyglot_castling_white_kingside() {
         let pos = Position::startpos(); // king at e1=Square(4)
-        // Polyglot encodes WK castling as e1→h1: to_file=7,to_rank=0,from_file=4,from_rank=0
+                                        // Polyglot encodes WK castling as e1→h1: to_file=7,to_rank=0,from_file=4,from_rank=0
         let raw: u16 = 7 | (0 << 3) | (4 << 6) | (0 << 9); // e1h1
         let mv = decode_polyglot_move(raw, &pos);
         assert!(mv.is_some(), "should decode WK castling");
@@ -336,7 +372,7 @@ mod tests {
     #[test]
     fn test_decode_polyglot_castling_white_queenside() {
         let pos = Position::startpos(); // king at e1=Square(4)
-        // Polyglot encodes WQ castling as e1→a1: to_file=0,to_rank=0,from_file=4,from_rank=0
+                                        // Polyglot encodes WQ castling as e1→a1: to_file=0,to_rank=0,from_file=4,from_rank=0
         let raw: u16 = 0 | (0 << 3) | (4 << 6) | (0 << 9); // e1a1
         let mv = decode_polyglot_move(raw, &pos);
         assert!(mv.is_some(), "should decode WQ castling");
@@ -348,7 +384,8 @@ mod tests {
 
     #[test]
     fn test_decode_polyglot_castling_black_kingside() {
-        let pos = Position::from_fen("rnbqk2r/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1").unwrap();
+        let pos =
+            Position::from_fen("rnbqk2r/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1").unwrap();
         // Black king at e8=Square(60), Polyglot encodes BK castling as e8→h8
         let raw: u16 = 7 | (7 << 3) | (4 << 6) | (7 << 9); // e8h8
         let mv = decode_polyglot_move(raw, &pos);
@@ -361,7 +398,8 @@ mod tests {
 
     #[test]
     fn test_decode_polyglot_castling_black_queenside() {
-        let pos = Position::from_fen("r3kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1").unwrap();
+        let pos =
+            Position::from_fen("r3kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1").unwrap();
         let raw: u16 = 0 | (7 << 3) | (4 << 6) | (7 << 9); // e8a8
         let mv = decode_polyglot_move(raw, &pos);
         assert!(mv.is_some(), "should decode BQ castling");

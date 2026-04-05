@@ -1,6 +1,8 @@
 # Chess Engine — task runner
 # Run `just` or `just help` to list all commands.
 
+export PATH := env_var('HOME') + "/.cargo/bin:" + env_var('PATH')
+
 default: help
 
 # List all available commands

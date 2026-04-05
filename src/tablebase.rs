@@ -1,8 +1,8 @@
-use std::path::Path;
-use shakmaty::{CastlingMode, Chess};
-use shakmaty::fen::Fen;
-use shakmaty_syzygy::{Tablebase, Wdl};
 use crate::board::Position;
+use shakmaty::fen::Fen;
+use shakmaty::{CastlingMode, Chess};
+use shakmaty_syzygy::{Tablebase, Wdl};
+use std::path::Path;
 
 #[derive(Debug)]
 pub enum TablebaseError {
@@ -51,12 +51,12 @@ impl SyzygyTablebase {
         }
         let chess = to_shakmaty(pos)?;
         match self.inner.probe_wdl_after_zeroing(&chess) {
-            Ok(Wdl::Win)         => Some(WdlResult::Win),
-            Ok(Wdl::Draw)        => Some(WdlResult::Draw),
-            Ok(Wdl::Loss)        => Some(WdlResult::Loss),
-            Ok(Wdl::CursedWin)   => Some(WdlResult::CursedWin),
+            Ok(Wdl::Win) => Some(WdlResult::Win),
+            Ok(Wdl::Draw) => Some(WdlResult::Draw),
+            Ok(Wdl::Loss) => Some(WdlResult::Loss),
+            Ok(Wdl::CursedWin) => Some(WdlResult::CursedWin),
             Ok(Wdl::BlessedLoss) => Some(WdlResult::BlessedLoss),
-            Err(_)               => None,
+            Err(_) => None,
         }
     }
 
@@ -69,13 +69,16 @@ impl SyzygyTablebase {
         let dtz = self.inner.probe_dtz(&chess).ok()?;
         let wdl_raw = self.inner.probe_wdl_after_zeroing(&chess).ok()?;
         let wdl = match wdl_raw {
-            Wdl::Win         => WdlResult::Win,
-            Wdl::Draw        => WdlResult::Draw,
-            Wdl::Loss        => WdlResult::Loss,
-            Wdl::CursedWin   => WdlResult::CursedWin,
+            Wdl::Win => WdlResult::Win,
+            Wdl::Draw => WdlResult::Draw,
+            Wdl::Loss => WdlResult::Loss,
+            Wdl::CursedWin => WdlResult::CursedWin,
             Wdl::BlessedLoss => WdlResult::BlessedLoss,
         };
-        Some(DtzResult { wdl, dtz: dtz.ignore_rounding().0 })
+        Some(DtzResult {
+            wdl,
+            dtz: dtz.ignore_rounding().0,
+        })
     }
 }
 
@@ -100,7 +103,10 @@ mod tests {
     fn test_to_shakmaty_startpos() {
         let pos = Position::startpos();
         let chess = to_shakmaty(&pos);
-        assert!(chess.is_some(), "startpos should convert to shakmaty::Chess");
+        assert!(
+            chess.is_some(),
+            "startpos should convert to shakmaty::Chess"
+        );
     }
 
     #[test]
@@ -113,7 +119,9 @@ mod tests {
     fn test_probe_wdl_too_many_pieces_returns_none() {
         // Even with a real tablebase, >6 pieces must return None.
         // With an empty tablebase (no files added), probe returns None regardless.
-        let tb = SyzygyTablebase { inner: Tablebase::new() };
+        let tb = SyzygyTablebase {
+            inner: Tablebase::new(),
+        };
         let pos = Position::startpos(); // 32 pieces
         assert!(tb.probe_wdl(&pos).is_none());
     }
@@ -121,14 +129,19 @@ mod tests {
     #[test]
     fn test_syzygy_new_missing_path_returns_error() {
         let result = SyzygyTablebase::new(Path::new("/nonexistent/tablebase/path"));
-        assert!(result.is_err(), "should return error for non-existent directory");
+        assert!(
+            result.is_err(),
+            "should return error for non-existent directory"
+        );
     }
 
     #[test]
     fn test_probe_dtz_returns_none_when_no_tables() {
         // KQvK requires KQK.rtbz; without any loaded files, probe must return None.
         // (KvK is trivially handled by shakmaty-syzygy without files.)
-        let tb = SyzygyTablebase { inner: Tablebase::new() };
+        let tb = SyzygyTablebase {
+            inner: Tablebase::new(),
+        };
         let pos = Position::from_fen("4k3/8/8/8/8/1Q6/8/4K3 w - - 0 1").unwrap();
         assert!(tb.probe_dtz(&pos).is_none());
     }
@@ -136,7 +149,9 @@ mod tests {
     #[test]
     fn test_probe_wdl_six_pieces_returns_none_without_tables() {
         // 6-piece position: must not crash and returns None without tablebase files.
-        let tb = SyzygyTablebase { inner: Tablebase::new() };
+        let tb = SyzygyTablebase {
+            inner: Tablebase::new(),
+        };
         let pos = Position::from_fen("4k3/8/8/8/8/1Q6/8/4K3 w - - 0 1").unwrap(); // KQvK (3 pieces)
         assert!(tb.probe_wdl(&pos).is_none());
     }
