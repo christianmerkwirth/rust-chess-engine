@@ -64,7 +64,11 @@ puzzle: release
 
 # Play games vs Stockfish: `just vs-stockfish [games] [skill]`  e.g. `just vs-stockfish 10 5`
 vs-stockfish games="7" skill="3": release
-    python3 -m uv run scripts/vs_stockfish.py --games {{games}} --skill {{skill}}
+    uv run scripts/vs_stockfish.py --games {{games}} --skill {{skill}}
+
+# Measure Elo vs Stockfish using cutechess-cli: `just measure-elo [games] [skill] [concurrency]`
+measure-elo games="100" skill="5" concurrency="4": release
+    uv run scripts/measure_elo.py --games {{games}} --sf-skill {{skill}} --concurrency {{concurrency}}
 
 # Remove build artefacts
 clean:

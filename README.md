@@ -105,7 +105,20 @@ The project uses `just` as a command runner. You can run `just` or `just help` t
 | `just bench-smp` | Benchmark NPS across thread counts (1, 2, 4) |
 | `just puzzle` | Solve a sample mate-in-2 puzzle |
 | `just vs-stockfish` | Play test games against Stockfish (requires `scripts/vs_stockfish.py`) |
+| `just measure-elo` | Measure the engine's Elo against Stockfish using `cutechess-cli` |
 | `just lint` / `just fmt` | Run clippy lints and format code |
+
+### Measuring Strength (Elo)
+
+You can quickly measure the engine's Elo rating relative to Stockfish using the `measure-elo` command. This is a wrapper around `cutechess-cli` that parses the output and prints a final Elo difference with error margin.
+
+```bash
+# Measure Elo over 100 games against Stockfish Skill 5 with 4 threads
+just measure-elo 100 5 4
+```
+
+*   **Arguments**: `games` (default: 100), `skill` (Stockfish skill 0-20, default: 5), `concurrency` (default: 4).
+*   **Requirements**: `cutechess-cli` and `stockfish` must be in your system PATH.
 
 ## Development Process
 
