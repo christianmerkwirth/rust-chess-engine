@@ -15,6 +15,14 @@ impl Square {
         self.0 / 8
     }
 
+    pub fn is_light(self) -> bool {
+        (self.rank() + self.file()) % 2 != 0
+    }
+
+    pub fn is_dark(self) -> bool {
+        !self.is_light()
+    }
+
     pub fn to_uci(self) -> String {
         let file = (b'a' + self.file()) as char;
         let rank = (b'1' + self.rank()) as char;

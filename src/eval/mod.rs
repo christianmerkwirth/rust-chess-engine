@@ -24,11 +24,12 @@ pub fn evaluate(pos: &Position) -> i32 {
             while !bb.is_empty() {
                 let sq = bb.pop_lsb();
 
-                // Mirror square for black pieces (PSTs are from white's perspective)
+                // Mirror square for white pieces to match BERF (visual) PST tables.
+                // For black, the square is already in the correct relative rank.
                 let eval_sq = if color == Color::White {
-                    sq.0 as usize
-                } else {
                     (sq.0 ^ 56) as usize
+                } else {
+                    sq.0 as usize
                 };
 
                 mg[c_idx] += MATERIAL_MG[p_idx] + PST_MG[p_idx][eval_sq];
@@ -128,5 +129,66 @@ mod tests {
             Position::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1").unwrap();
 
         assert_eq!(eval_w, -evaluate(&pos_b));
+    }
+
+    #[test]
+    fn test_eval_e2e4_improves_white() {
+        let pos_start = Position::startpos();
+        let pos_e2e4 = Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1").unwrap();
+        
+        let eval_start = evaluate(&pos_start); // White to move
+        // evaluate returns side-to-move perspective. 
+        // For pos_e2e4, it's black to move, so we negate it to get white's score.
+        let eval_e2e4 = -evaluate(&pos_e2e4); 
+        
+        assert!(eval_e2e4 > eval_start, "e2e4 eval ({}) should be better than startpos ({}) from white's POV", eval_e2e4, eval_start);
+    }
+
+    #[test]
+    fn test_eval_a7_beats_a2() {
+        // One white pawn on a7 vs one white pawn on a2
+        let pos_a2 = Position::from_fen("8/8/8/8/8/8/P7/4K2k w - - 0 1").unwrap();
+        let pos_a7 = Position::from_fen("8/P7/8/8/8/8/8/4K2k w - - 0 1").unwrap();
+        
+        let eval_a2 = evaluate(&pos_a2);
+        let eval_a7 = evaluate(&pos_a7);
+        
+        assert!(eval_a7 > eval_a2, "Pawn on a7 ({}) should be better than on a2 ({})", eval_a7, eval_a2);
+    }
+
+    #[test]
+    fn test_king_mg_prefers_back_rank() {
+        // Middlegame phase (many pieces)
+        let fen_e1 = "rnbq1rk1/pppp1ppp/4pn2/8/8/4PN2/PPPP1PPP/RNBQK2R w KQ - 0 1";
+        let fen_e4 = "rnbq1rk1/pppp1ppp/4pn2/8/4K3/4PN2/PPPP1PPP/RNBQ3R w - - 0 1";
+        let fen_g1 = "rnbq1rk1/pppp1ppp/4pn2/8/8/4PN2/PPPP1PPP/RNBQ1RK1 w - - 0 1";
+
+        let pos_e1 = Position::from_fen(fen_e1).unwrap();
+        let pos_e4 = Position::from_fen(fen_e4).unwrap();
+        let pos_g1 = Position::from_fen(fen_g1).unwrap();
+
+        let eval_e1 = evaluate(&pos_e1);
+        let eval_e4 = evaluate(&pos_e4);
+        let eval_g1 = evaluate(&pos_g1);
+
+        assert!(eval_e1 > eval_e4, "King on e1 ({}) should be better than on e4 ({})", eval_e1, eval_e4);
+        assert!(eval_g1 > eval_e4, "King on g1 ({}) should be better than on e4 ({})", eval_g1, eval_e4);
+    }
+
+    #[test]
+    fn test_pst_bishop_row7_not_duplicate() {
+        // Bishop MG row 0 (BERF rank 8) and row 7 (BERF rank 1) should not be identical
+        // PeSTO Bishop MG row 0: [-29, 4, -82, -37, -25, -42, 7, -8]
+        // PeSTO Bishop MG row 7: [-29, 4, -82, -37, -25, -42, 7, -8] wait, are they?
+        // Let me check PeSTO values.
+        // Actually the design says they are duplicates in the current code but shouldn't be.
+        let row0 = &PST_MG[Piece::Bishop as usize][0..8];
+        let row7 = &PST_MG[Piece::Bishop as usize][56..64];
+        assert_ne!(row0, row7, "Bishop MG row 0 and row 7 should not be identical");
+    }
+
+    #[test]
+    fn test_material_mg_ne_eg() {
+        assert_ne!(MATERIAL_MG, MATERIAL_EG, "MG and EG material values should be different");
     }
 }

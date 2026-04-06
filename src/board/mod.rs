@@ -27,6 +27,7 @@ pub struct Position {
     halfmove_clock: u32,
     fullmove_number: u32,
     hash: u64,
+    history: Vec<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +270,7 @@ impl Position {
             halfmove_clock,
             fullmove_number,
             hash: 0,
+            history: Vec::new(),
         };
         pos.hash = pos.compute_hash();
         Ok(pos)
@@ -353,6 +355,10 @@ impl Position {
         let us = self.side;
         let them = us.opposite();
         let (_, moving_piece) = self.piece_at(from).expect("no piece at from-square");
+        let old_castling = self.castling;
+
+        // Record history before move
+        self.history.push(self.hash);
 
         // XOR out old castling and en-passant contributions
         self.hash ^= zobrist::castling_key(self.castling);
@@ -521,6 +527,10 @@ impl Position {
             self.fullmove_number += 1;
         }
         self.side = them;
+
+        if self.halfmove_clock == 0 || self.castling != old_castling {
+            self.history.clear();
+        }
     }
 
     /// Returns true if `color`'s king is currently in check.
@@ -614,6 +624,9 @@ impl Position {
     /// Make a "null move" (passing the turn to the opponent).
     /// Used for Null Move Pruning in search.
     pub fn make_null_move(&mut self) {
+        // Record history before move
+        self.history.push(self.hash);
+
         // XOR out old EP
         if let Some(ep) = self.en_passant {
             self.hash ^= zobrist::en_passant_key(ep.file());
@@ -632,6 +645,63 @@ impl Position {
 
     pub fn is_draw_by_fifty(&self) -> bool {
         self.halfmove_clock >= 100
+    }
+
+    /// Returns true if the current position has occurred at least twice before
+    /// since the last irreversible move (meaning this is the 3rd occurrence).
+    pub fn is_draw_by_repetition(&self) -> bool {
+        let mut count = 0;
+        for &h in &self.history {
+            if h == self.hash {
+                count += 1;
+            }
+        }
+        count >= 2
+    }
+
+    /// Returns true if it is impossible for either side to deliver checkmate.
+    pub fn is_draw_by_insufficient_material(&self) -> bool {
+        // If any pawns, rooks, or queens exist, it's not a draw.
+        let pawns = self.pieces(Color::White, Piece::Pawn) | self.pieces(Color::Black, Piece::Pawn);
+        if !pawns.is_empty() {
+            return false;
+        }
+        let majors = self.pieces(Color::White, Piece::Rook)
+            | self.pieces(Color::Black, Piece::Rook)
+            | self.pieces(Color::White, Piece::Queen)
+            | self.pieces(Color::Black, Piece::Queen);
+        if !majors.is_empty() {
+            return false;
+        }
+
+        let w_knights = self.pieces(Color::White, Piece::Knight);
+        let b_knights = self.pieces(Color::Black, Piece::Knight);
+        let w_bishops = self.pieces(Color::White, Piece::Bishop);
+        let b_bishops = self.pieces(Color::Black, Piece::Bishop);
+
+        let w_count = w_knights.count() + w_bishops.count();
+        let b_count = b_knights.count() + b_bishops.count();
+
+        // K vs K
+        if w_count == 0 && b_count == 0 {
+            return true;
+        }
+
+        // K vs KB or K vs KN
+        if (w_count == 1 && b_count == 0) || (w_count == 0 && b_count == 1) {
+            return true;
+        }
+
+        // KB vs KB (same colored bishops)
+        if w_count == 1 && b_count == 1 && !w_bishops.is_empty() && !b_bishops.is_empty() {
+            let w_sq = w_bishops.lsb();
+            let b_sq = b_bishops.lsb();
+            if w_sq.is_light() == b_sq.is_light() {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Compute Zobrist hash from scratch (used to verify incremental updates).
@@ -1229,5 +1299,63 @@ mod tests {
             3,
         ));
         assert_eq!(pos.hash(), pos.compute_hash());
+    }
+
+    // --- draw detection ---
+
+    #[test]
+    fn test_is_draw_by_repetition() {
+        let mut pos = Position::startpos();
+        // 1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. Ng1 Ng8 -> 3rd occurrence of startpos
+        let nf3 = Move::new(Square(6), Square(21), 0, 0);
+        let nf6 = Move::new(Square(62), Square(45), 0, 0);
+        let ng1 = Move::new(Square(21), Square(6), 0, 0);
+        let ng8 = Move::new(Square(45), Square(62), 0, 0);
+
+        pos.make_move(nf3); // 2nd occurrence (after nf3)
+        pos.make_move(nf6);
+        pos.make_move(ng1); // 2nd occurrence of startpos
+        pos.make_move(ng8);
+        assert!(!pos.is_draw_by_repetition());
+
+        pos.make_move(nf3);
+        pos.make_move(nf6);
+        pos.make_move(ng1);
+        pos.make_move(ng8); // 3rd occurrence of startpos
+        assert!(pos.is_draw_by_repetition());
+    }
+
+    #[test]
+    fn test_is_draw_by_insufficient_material_kvk() {
+        assert!(p("8/8/8/8/8/4k3/8/4K3 w - - 0 1").is_draw_by_insufficient_material());
+    }
+
+    #[test]
+    fn test_is_draw_by_insufficient_material_kvkb() {
+        assert!(p("8/8/8/8/8/4k3/8/4K1B1 w - - 0 1").is_draw_by_insufficient_material());
+        assert!(p("8/8/8/8/8/4k1b1/8/4K3 w - - 0 1").is_draw_by_insufficient_material());
+    }
+
+    #[test]
+    fn test_is_draw_by_insufficient_material_kvkn() {
+        assert!(p("8/8/8/8/8/4k3/8/4K1N1 w - - 0 1").is_draw_by_insufficient_material());
+        assert!(p("8/8/8/8/8/4k1n1/8/4K3 w - - 0 1").is_draw_by_insufficient_material());
+    }
+
+    #[test]
+    fn test_is_draw_by_insufficient_material_kbvkb_same_color() {
+        // White bishop on f1 (dark), black bishop on c8 (dark)
+        assert!(p("2b5/8/8/8/8/8/8/4KB2 w - - 0 1").is_draw_by_insufficient_material());
+    }
+
+    #[test]
+    fn test_is_not_draw_by_insufficient_material_kbvkb_diff_color() {
+        // White bishop on f1 (dark), black bishop on b8 (light)
+        assert!(!p("1b6/8/8/8/8/8/8/4KB2 w - - 0 1").is_draw_by_insufficient_material());
+    }
+
+    #[test]
+    fn test_is_not_draw_by_insufficient_material_pawn() {
+        assert!(!p("8/8/8/8/8/4k3/4P3/4K3 w - - 0 1").is_draw_by_insufficient_material());
     }
 }

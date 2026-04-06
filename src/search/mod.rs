@@ -4,7 +4,7 @@ pub mod smp;
 pub mod tt;
 
 use crate::board::Position;
-use crate::search::alphabeta::{search, SearchState, INFINITY};
+use crate::search::alphabeta::{search, score_from_tt, SearchState, INFINITY};
 use crate::search::tt::TranspositionTable;
 use crate::tablebase::SyzygyTablebase;
 use crate::types::Move;
@@ -16,6 +16,7 @@ use std::time::Instant;
 pub struct SearchLimits {
     pub depth: Option<i32>,
     pub movetime: Option<u64>,
+    pub nodes: Option<u64>,
     pub infinite: bool,
     pub ponder: bool,
 }
@@ -47,7 +48,7 @@ pub fn iterative_deepening(
     info_callback: impl Fn(SearchInfo),
 ) -> SearchResult {
     let start_time = Instant::now();
-    let mut state = SearchState::new(stop, pondering, nodes, limits.movetime);
+    let mut state = SearchState::new(stop, pondering, nodes, limits.movetime, limits.nodes);
     state.tablebase = tablebase;
     let mut best_score = 0;
     let mut best_move = {
@@ -63,6 +64,13 @@ pub fn iterative_deepening(
     let max_depth = limits.depth.unwrap_or(100);
 
     for depth in start_depth..=max_depth {
+        // FR-16: Check nodes limit before starting iteration
+        if let Some(nodes_limit) = limits.nodes {
+            if nodes.load(Ordering::Relaxed) >= nodes_limit {
+                break;
+            }
+        }
+
         let score = search(pos, &mut state, tt, depth, 0, -INFINITY, INFINITY);
 
         if stop.load(Ordering::Relaxed) {
@@ -70,7 +78,7 @@ pub fn iterative_deepening(
             if let Some(data) = tt.probe(pos.hash()) {
                 if data.best_move != Move::NONE {
                     best_move = data.best_move;
-                    best_score = data.score as i32;
+                    best_score = score_from_tt(data.score, 0);
                 }
             }
             break;
@@ -106,6 +114,16 @@ pub fn iterative_deepening(
             break;
         }
     }
+
+    // Report final info
+    let pv = get_pv(pos, tt, max_depth);
+    info_callback(SearchInfo {
+        depth: if best_move != Move::NONE { start_depth } else { 0 }, // Placeholder, depth is tricky here
+        nodes: nodes.load(Ordering::Relaxed),
+        score: best_score,
+        time: start_time.elapsed().as_millis(),
+        pv,
+    });
 
     SearchResult {
         best_move,

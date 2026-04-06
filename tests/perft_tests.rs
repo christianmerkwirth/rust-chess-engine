@@ -10,7 +10,15 @@ fn test_perft_startpos() {
     assert_eq!(perft(&pos, 2), 400);
     assert_eq!(perft(&pos, 3), 8_902);
     assert_eq!(perft(&pos, 4), 197_281);
-    // Depth 5 and 6 are slow in debug mode, so we might skip them or run only in release
+    assert_eq!(perft(&pos, 5), 4_865_609);
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore)]
+fn test_perft_startpos_depth_6() {
+    magics::init();
+    let pos = Position::startpos();
+    assert_eq!(perft(&pos, 6), 119_060_324);
 }
 
 #[test]

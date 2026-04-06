@@ -19,11 +19,12 @@ pub fn allocate_time(params: &GoParams, side: Color) -> SearchLimits {
     let mut limits = SearchLimits {
         depth: params.depth,
         movetime: params.movetime,
+        nodes: params.nodes,
         infinite: params.infinite,
         ponder: params.ponder,
     };
 
-    if limits.infinite || limits.depth.is_some() || limits.movetime.is_some() {
+    if limits.infinite || limits.depth.is_some() || limits.movetime.is_some() || limits.nodes.is_some() {
         return limits;
     }
 

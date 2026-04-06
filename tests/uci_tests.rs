@@ -158,6 +158,55 @@ fn test_uci_ponder_miss() {
 }
 
 #[test]
+fn test_uci_ponder_clock_preservation() {
+    let mut engine = UciEngine::new();
+    engine.send("isready");
+    engine.wait_for("readyok");
+    // Start pondering with 2000ms movetime
+    engine.send("go ponder movetime 2000");
+    // Wait for search to be running
+    engine.wait_for("info depth");
+
+    // Let it ponder for 500ms
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Send ponderhit
+    let start_hit = std::time::Instant::now();
+    engine.send("ponderhit");
+    
+    // It should now run for 2000ms from the time of ponderhit
+    engine.wait_for("bestmove");
+    let elapsed = start_hit.elapsed();
+    
+    // If it didn't preserve the clock, it would stop in 2000 - 500 = 1500ms.
+    // If it did preserve, it stops in 2000ms.
+    // We allow 200ms of overhead/tolerance
+    assert!(
+        elapsed.as_millis() >= 1800,
+        "Too fast: {}ms (expected >= 1800ms after ponderhit)",
+        elapsed.as_millis()
+    );
+    assert!(
+        elapsed.as_millis() < 2500,
+        "Too slow: {}ms (expected < 2500ms after ponderhit)",
+        elapsed.as_millis()
+    );
+}
+
+#[test]
+fn test_uci_go_hammer() {
+    let mut engine = UciEngine::new();
+    engine.send("isready");
+    engine.wait_for("readyok");
+    for _ in 0..10 {
+        engine.send("go depth 100");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    engine.send("stop");
+    engine.wait_for("bestmove");
+}
+
+#[test]
 fn test_uci_threads_option_advertised() {
     let mut engine = UciEngine::new();
     engine.send("uci");

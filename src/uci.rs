@@ -63,7 +63,7 @@ pub fn uci_loop() {
         match parts[0] {
             "uci" => {
                 println!("id name ChessEngine");
-                println!("id author Gemini CLI");
+                println!("id author Christian Merkwirth");
                 println!("option name Hash type spin default 64 min 1 max 4096");
                 println!("option name Threads type spin default 1 min 1 max 256");
                 println!("option name Ponder type check default false");
@@ -73,7 +73,7 @@ pub fn uci_loop() {
             }
             "isready" => println!("readyok"),
             "ucinewgame" => {
-                engine.tt.clear();
+                engine.tt.new_search();
                 engine.pos = Position::startpos();
             }
             "setoption" => {
@@ -113,32 +113,45 @@ fn parse_position(engine: &mut Engine, parts: &[&str]) {
         return;
     }
 
-    let mut current_idx = 1;
+    let mut tmp_pos;
+    let mut current_idx;
     if parts[1] == "startpos" {
-        engine.pos = Position::startpos();
+        tmp_pos = Position::startpos();
         current_idx = 2;
     } else if parts[1] == "fen" {
         let mut fen_parts = Vec::new();
-        current_idx = 2;
-        while current_idx < parts.len() && parts[current_idx] != "moves" {
-            fen_parts.push(parts[current_idx]);
-            current_idx += 1;
+        let mut idx = 2;
+        while idx < parts.len() && parts[idx] != "moves" {
+            fen_parts.push(parts[idx]);
+            idx += 1;
         }
+        current_idx = idx;
         let fen = fen_parts.join(" ");
-        if let Ok(pos) = Position::from_fen(&fen) {
-            engine.pos = pos;
+        match Position::from_fen(&fen) {
+            Ok(pos) => tmp_pos = pos,
+            Err(_) => {
+                println!("info string invalid fen");
+                return;
+            }
         }
+    } else {
+        return;
     }
 
     if current_idx < parts.len() && parts[current_idx] == "moves" {
         current_idx += 1;
         while current_idx < parts.len() {
-            if let Some(mv) = engine.pos.parse_move(parts[current_idx]) {
-                engine.pos.make_move(mv);
+            if let Some(mv) = tmp_pos.parse_move(parts[current_idx]) {
+                tmp_pos.make_move(mv);
+            } else {
+                println!("info string invalid move: {}", parts[current_idx]);
+                return;
             }
             current_idx += 1;
         }
     }
+
+    engine.pos = tmp_pos;
 }
 
 fn handle_setoption(engine: &mut Engine, parts: &[&str]) {
@@ -192,12 +205,42 @@ fn handle_setoption(engine: &mut Engine, parts: &[&str]) {
 }
 
 fn parse_go(engine: &mut Engine, parts: &[&str]) {
+    // Stop any current search
+    if engine.search_handle.is_some() {
+        engine.stop.store(true, Ordering::Relaxed);
+        engine.pondering.store(false, Ordering::Relaxed);
+        if let Some(handle) = engine.search_handle.take() {
+            let _ = handle.join();
+        }
+    }
+
+    // FR-14: If the position is terminal (no legal moves), return bestmove 0000.
+    let legal_moves = crate::movegen::generate_moves(&engine.pos);
+    if legal_moves.is_empty() {
+        println!("bestmove 0000");
+        io::stdout().flush().unwrap();
+        return;
+    }
+
     // Book probe: if the position is in the opening book, return immediately.
     if let Some(ref book) = engine.book {
         if let Some(book_move) = book.probe(&engine.pos) {
-            println!("bestmove {}", book_move.to_uci());
-            io::stdout().flush().unwrap();
-            return;
+            // FR-15: Verify book move legality.
+            let mut is_legal = false;
+            for mv in &legal_moves {
+                if mv == book_move {
+                    is_legal = true;
+                    break;
+                }
+            }
+
+            if is_legal {
+                println!("bestmove {}", book_move.to_uci());
+                io::stdout().flush().unwrap();
+                return;
+            } else {
+                println!("info string illegal book move: {}", book_move.to_uci());
+            }
         }
     }
 

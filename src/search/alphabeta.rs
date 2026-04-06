@@ -13,6 +13,29 @@ pub const INFINITY: i32 = 32000;
 /// Score used for tablebase wins/losses. Below mate, above normal eval range.
 pub const TABLEBASE_WIN: i32 = 20000;
 
+#[inline(always)]
+pub fn score_to_tt(s: i32, ply: i32) -> i16 {
+    if s >= MATE_SCORE - 1000 {
+        (s + ply) as i16
+    } else if s <= -MATE_SCORE + 1000 {
+        (s - ply) as i16
+    } else {
+        s as i16
+    }
+}
+
+#[inline(always)]
+pub fn score_from_tt(s: i16, ply: i32) -> i32 {
+    let s = s as i32;
+    if s >= MATE_SCORE - 1000 {
+        s - ply
+    } else if s <= -MATE_SCORE + 1000 {
+        s + ply
+    } else {
+        s
+    }
+}
+
 use std::time::Instant;
 
 pub struct SearchState<'a> {
@@ -22,7 +45,9 @@ pub struct SearchState<'a> {
     pub pondering: &'a AtomicBool,
     pub start_time: Instant,
     pub movetime: Option<u64>,
+    pub nodes_limit: Option<u64>,
     pub tablebase: Option<Arc<SyzygyTablebase>>,
+    pub was_pondering: bool,
 }
 
 impl<'a> SearchState<'a> {
@@ -31,6 +56,7 @@ impl<'a> SearchState<'a> {
         pondering: &'a AtomicBool,
         nodes: &'a AtomicU64,
         movetime: Option<u64>,
+        nodes_limit: Option<u64>,
     ) -> Self {
         Self {
             killers: KillerTable::new(),
@@ -39,7 +65,9 @@ impl<'a> SearchState<'a> {
             pondering,
             start_time: Instant::now(),
             movetime,
+            nodes_limit,
             tablebase: None,
+            was_pondering: pondering.load(Ordering::Relaxed),
         }
     }
 }
@@ -60,10 +88,24 @@ pub fn search(
         if state.stop.load(Ordering::Relaxed) {
             return 0;
         }
-        if !state.pondering.load(Ordering::Relaxed) {
+
+        let currently_pondering = state.pondering.load(Ordering::Relaxed);
+        if state.was_pondering && !currently_pondering {
+            state.start_time = Instant::now();
+            state.was_pondering = false;
+        }
+
+        if !currently_pondering {
             if let Some(limit) = state.movetime {
                 let elapsed = state.start_time.elapsed().as_millis();
                 if elapsed >= limit as u128 {
+                    state.stop.store(true, Ordering::Relaxed);
+                    return 0;
+                }
+            }
+
+            if let Some(limit) = state.nodes_limit {
+                if nodes >= limit {
                     state.stop.store(true, Ordering::Relaxed);
                     return 0;
                 }
@@ -72,7 +114,10 @@ pub fn search(
     }
 
     // Check for draw
-    if pos.is_draw_by_fifty() {
+    if pos.is_draw_by_fifty()
+        || (ply > 0
+            && (pos.is_draw_by_repetition() || pos.is_draw_by_insufficient_material()))
+    {
         return 0;
     }
 
@@ -81,8 +126,8 @@ pub fn search(
     let mut pv_move = Move::NONE;
     if let Some(data) = tt_hit {
         pv_move = data.best_move;
-        if data.depth >= depth as i8 {
-            let score = data.score as i32;
+        if data.depth >= depth as i8 && ply > 0 {
+            let score = score_from_tt(data.score, ply as i32);
             match data.flag {
                 TTFlag::Exact => return score,
                 TTFlag::LowerBound => {
@@ -140,7 +185,7 @@ pub fn search(
     }
 
     if depth <= 0 {
-        return quiescence(pos, state, alpha, beta);
+        return quiescence(pos, state, alpha, beta, 0);
     }
 
     let mut moves = generate_moves(pos);
@@ -210,17 +255,55 @@ pub fn search(
         pos.hash(),
         TTData {
             depth: depth as i8,
-            score: best_score as i16,
+            score: score_to_tt(best_score, ply as i32),
             flag,
             best_move,
+            gen: 0, // Will be set by tt.store
         },
     );
 
     best_score
 }
 
-pub fn quiescence(pos: &Position, state: &mut SearchState, mut alpha: i32, beta: i32) -> i32 {
-    state.nodes.fetch_add(1, Ordering::Relaxed);
+pub const MAX_QPLY: usize = 64;
+
+pub fn quiescence(
+    pos: &Position,
+    state: &mut SearchState,
+    mut alpha: i32,
+    beta: i32,
+    qply: usize,
+) -> i32 {
+    let nodes = state.nodes.fetch_add(1, Ordering::Relaxed) + 1;
+
+    // Check stop flag every 2048 nodes
+    if nodes & 0x7FF == 0 {
+        if state.stop.load(Ordering::Relaxed) {
+            return 0;
+        }
+
+        if !state.pondering.load(Ordering::Relaxed) {
+            if let Some(limit) = state.movetime {
+                let elapsed = state.start_time.elapsed().as_millis();
+                if elapsed >= limit as u128 {
+                    state.stop.store(true, Ordering::Relaxed);
+                    return 0;
+                }
+            }
+
+            if let Some(limit) = state.nodes_limit {
+                if nodes >= limit {
+                    state.stop.store(true, Ordering::Relaxed);
+                    return 0;
+                }
+            }
+        }
+    }
+
+    // FR-17: Ply bound for quiescence
+    if qply >= MAX_QPLY {
+        return evaluate(pos);
+    }
 
     let stand_pat = evaluate(pos);
     if stand_pat >= beta {
@@ -239,7 +322,11 @@ pub fn quiescence(pos: &Position, state: &mut SearchState, mut alpha: i32, beta:
         let mut next_pos = pos.clone();
         next_pos.make_move(mv);
 
-        let score = -quiescence(&next_pos, state, -beta, -alpha);
+        let score = -quiescence(&next_pos, state, -beta, -alpha, qply + 1);
+
+        if state.stop.load(Ordering::Relaxed) {
+            return 0;
+        }
 
         if score >= beta {
             return score;
@@ -276,7 +363,7 @@ mod tests {
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
         let nodes = AtomicU64::new(0);
-        let mut state = SearchState::new(&stop, &pondering, &nodes, None);
+        let mut state = SearchState::new(&stop, &pondering, &nodes, None, None);
 
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);
@@ -298,7 +385,7 @@ mod tests {
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
         let nodes = AtomicU64::new(0);
-        let mut state = SearchState::new(&stop, &pondering, &nodes, None);
+        let mut state = SearchState::new(&stop, &pondering, &nodes, None, None);
 
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);
@@ -306,5 +393,24 @@ mod tests {
         let data = tt.probe(pos.hash()).unwrap();
         assert_eq!(data.best_move.from_sq(), Square::from_file_rank(7, 4)); // h5
         assert_eq!(data.best_move.to_sq(), Square::from_file_rank(5, 6)); // f7
+    }
+
+    #[test]
+    fn test_mate_score_conversion() {
+        let ply = 5;
+        let score = MATE_SCORE - 10;
+        let tt_score = score_to_tt(score, ply);
+        assert_eq!(tt_score, (score + ply) as i16);
+        assert_eq!(score_from_tt(tt_score, ply), score);
+
+        let score = -MATE_SCORE + 10;
+        let tt_score = score_to_tt(score, ply);
+        assert_eq!(tt_score, (score - ply) as i16);
+        assert_eq!(score_from_tt(tt_score, ply), score);
+
+        let score = 500;
+        let tt_score = score_to_tt(score, ply);
+        assert_eq!(tt_score, score as i16);
+        assert_eq!(score_from_tt(tt_score, ply), score);
     }
 }

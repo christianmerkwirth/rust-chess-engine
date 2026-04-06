@@ -36,7 +36,6 @@ def run_match(args):
         "-rounds", str(args.games // 2),
         "-repeat",
         "-concurrency", str(args.concurrency),
-        "-ratinginterval", "10",
     ]
 
     print(f"Running match: {' '.join(cutechess_args)}")
@@ -98,7 +97,7 @@ def main():
     parser.add_argument("--sf-skill", type=int, default=5, help="Stockfish Skill Level (0-20).")
     parser.add_argument("--tc", default="10+0.1", help="Time control (e.g. 10+0.1 or 40/60).")
     parser.add_argument("--games", type=int, default=100, help="Total number of games to play.")
-    parser.add_argument("--concurrency", type=int, default=4, help="Number of concurrent games.")
+    parser.add_argument("--concurrency", type=int, default=10, help="Number of concurrent games.")
     
     args = parser.parse_args()
 
