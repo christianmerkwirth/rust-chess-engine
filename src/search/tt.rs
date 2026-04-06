@@ -49,8 +49,11 @@ impl TTData {
     }
 }
 
+/// A Transposition Table entry.
+/// We use two 64-bit words and a sequence counter to ensure consistency
+/// during concurrent access.
 struct TTEntry {
-    /// word0 = hash ^ data
+    /// word0 = hash ^ data (XOR trick for key storage)
     word0: AtomicU64,
     /// word1 = data
     word1: AtomicU64,
@@ -63,7 +66,8 @@ pub struct TranspositionTable {
 
 impl TranspositionTable {
     pub fn new(size_mb: usize) -> Self {
-        let n_entries = (size_mb * 1024 * 1024) / std::mem::size_of::<TTEntry>();
+        let entry_size = std::mem::size_of::<TTEntry>();
+        let n_entries = (size_mb * 1024 * 1024) / entry_size;
         let n_entries = n_entries.next_power_of_two();
         let mut entries = Vec::with_capacity(n_entries);
         for _ in 0..n_entries {
@@ -82,9 +86,11 @@ impl TranspositionTable {
         let index = (hash as usize) & self.mask;
         let entry = &self.entries[index];
 
-        // XOR trick: read word1 then word0
-        let word1 = entry.word1.load(Ordering::Relaxed);
-        let word0 = entry.word0.load(Ordering::Relaxed);
+        // The XOR trick: read word1 then word0.
+        // If they XOR to the hash, the data is valid for this hash.
+        // We use Acquire to ensure we see the correct state of both words.
+        let word1 = entry.word1.load(Ordering::Acquire);
+        let word0 = entry.word0.load(Ordering::Acquire);
 
         if word0 ^ word1 == hash {
             Some(TTData::unpack(word1))
@@ -99,9 +105,10 @@ impl TranspositionTable {
 
         let packed = data.pack();
 
-        // XOR trick: write word1 then word0
-        entry.word1.store(packed, Ordering::Relaxed);
-        entry.word0.store(hash ^ packed, Ordering::Relaxed);
+        // The XOR trick: write word1 then word0.
+        // We use Release to ensure that the order is preserved for other threads.
+        entry.word1.store(packed, Ordering::Release);
+        entry.word0.store(hash ^ packed, Ordering::Release);
     }
 
     pub fn clear(&self) {
@@ -113,7 +120,6 @@ impl TranspositionTable {
 
     pub fn hashfull(&self) -> u32 {
         let mut occupied = 0;
-        // Sample first 1000 entries for efficiency
         let sample_size = self.entries.len().min(1000);
         for i in 0..sample_size {
             if self.entries[i].word0.load(Ordering::Relaxed) != 0 {

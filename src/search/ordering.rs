@@ -56,18 +56,19 @@ pub fn order_moves(moves: &mut MoveList, pv_move: Move, killers: &[Move; 2], pos
         scores[i] = score;
     }
 
-    // Selection sort
-    for i in 0..moves.len() {
-        let mut best_idx = i;
-        for j in i + 1..moves.len() {
-            if scores[j] > scores[best_idx] {
-                best_idx = j;
-            }
-        }
-        if best_idx != i {
-            moves.swap(i, best_idx);
-            scores.swap(i, best_idx);
-        }
+    // Sort moves based on scores in descending order.
+    // We use a simple stable sort or just zip and sort.
+    let mut combined: Vec<(Move, i32)> = moves
+        .as_slice()
+        .iter()
+        .zip(scores.iter())
+        .map(|(&m, &s)| (m, s))
+        .collect();
+
+    combined.sort_by_key(|&(_, s)| -s);
+
+    for (i, (m, _)) in combined.into_iter().enumerate() {
+        moves.as_mut_slice()[i] = m;
     }
 }
 

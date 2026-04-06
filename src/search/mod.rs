@@ -8,7 +8,7 @@ use crate::search::alphabeta::{search, SearchState, INFINITY};
 use crate::search::tt::TranspositionTable;
 use crate::tablebase::SyzygyTablebase;
 use crate::types::Move;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -41,12 +41,13 @@ pub fn iterative_deepening(
     limits: &SearchLimits,
     stop: &AtomicBool,
     pondering: &AtomicBool,
+    nodes: &AtomicU64,
     tablebase: Option<Arc<SyzygyTablebase>>,
     start_depth: i32,
     info_callback: impl Fn(SearchInfo),
 ) -> SearchResult {
     let start_time = Instant::now();
-    let mut state = SearchState::new(stop, pondering, limits.movetime);
+    let mut state = SearchState::new(stop, pondering, nodes, limits.movetime);
     state.tablebase = tablebase;
     let mut best_score = 0;
     let mut best_move = {
@@ -89,7 +90,7 @@ pub fn iterative_deepening(
 
         let info = SearchInfo {
             depth,
-            nodes: state.nodes,
+            nodes: state.nodes.load(Ordering::Relaxed),
             score: best_score,
             time: start_time.elapsed().as_millis(),
             pv,

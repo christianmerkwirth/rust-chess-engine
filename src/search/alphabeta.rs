@@ -4,8 +4,8 @@ use crate::movegen::{generate_captures, generate_moves};
 use crate::search::ordering::{order_moves, KillerTable};
 use crate::search::tt::{TTData, TTFlag, TranspositionTable};
 use crate::tablebase::{SyzygyTablebase, WdlResult};
-use crate::types::Move;
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::types::{Move, Piece};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub const MATE_SCORE: i32 = 30000;
@@ -17,7 +17,7 @@ use std::time::Instant;
 
 pub struct SearchState<'a> {
     pub killers: KillerTable,
-    pub nodes: u64,
+    pub nodes: &'a AtomicU64,
     pub stop: &'a AtomicBool,
     pub pondering: &'a AtomicBool,
     pub start_time: Instant,
@@ -26,10 +26,15 @@ pub struct SearchState<'a> {
 }
 
 impl<'a> SearchState<'a> {
-    pub fn new(stop: &'a AtomicBool, pondering: &'a AtomicBool, movetime: Option<u64>) -> Self {
+    pub fn new(
+        stop: &'a AtomicBool,
+        pondering: &'a AtomicBool,
+        nodes: &'a AtomicU64,
+        movetime: Option<u64>,
+    ) -> Self {
         Self {
             killers: KillerTable::new(),
-            nodes: 0,
+            nodes,
             stop,
             pondering,
             start_time: Instant::now(),
@@ -48,10 +53,10 @@ pub fn search(
     mut alpha: i32,
     mut beta: i32,
 ) -> i32 {
-    state.nodes += 1;
+    let nodes = state.nodes.fetch_add(1, Ordering::Relaxed) + 1;
 
     // Check stop flag every 2048 nodes
-    if state.nodes & 0x7FF == 0 {
+    if nodes & 0x7FF == 0 {
         if state.stop.load(Ordering::Relaxed) {
             return 0;
         }
@@ -96,18 +101,40 @@ pub fn search(
         }
     }
 
-    // Tablebase probe: at ≤6 pieces return exact WDL score immediately.
+    // Tablebase probe
     if let Some(ref tb) = state.tablebase {
         if pos.occupancy().count() <= 6 {
             if let Some(wdl) = tb.probe_wdl(pos) {
                 let score = match wdl {
-                    WdlResult::Win => TABLEBASE_WIN,
-                    WdlResult::Loss => -TABLEBASE_WIN,
+                    WdlResult::Win => TABLEBASE_WIN - ply as i32,
+                    WdlResult::Loss => -TABLEBASE_WIN + ply as i32,
                     WdlResult::CursedWin => 1,
                     WdlResult::BlessedLoss => -1,
                     WdlResult::Draw => 0,
                 };
                 return score;
+            }
+        }
+    }
+
+    // Null Move Pruning (NMP)
+    if depth >= 3
+        && !pos.is_in_check(pos.side_to_move())
+        && ply > 0 // Don't do NMP at the root
+    {
+        let us = pos.side_to_move();
+        // Simple condition: only if we have more than just pawns
+        let non_pawn_pieces = pos.occupancy_color(us)
+            & !(pos.pieces(us, Piece::Pawn) | pos.pieces(us, Piece::King));
+        if !non_pawn_pieces.is_empty() {
+            let mut next_pos = pos.clone();
+            next_pos.make_null_move();
+            // Reduction: R=2 or 3
+            let r = 3;
+            let score = -search(&next_pos, state, tt, depth - 1 - r, ply + 1, -beta, -beta + 1);
+
+            if score >= beta {
+                return beta;
             }
         }
     }
@@ -136,7 +163,18 @@ pub fn search(
         let mut next_pos = pos.clone();
         next_pos.make_move(mv);
 
-        let score = -search(&next_pos, state, tt, depth - 1, ply + 1, -beta, -alpha);
+        let mut score;
+        if i == 0 {
+            // Full window search for first move (PV move)
+            score = -search(&next_pos, state, tt, depth - 1, ply + 1, -beta, -alpha);
+        } else {
+            // Null window search for non-PV moves
+            score = -search(&next_pos, state, tt, depth - 1, ply + 1, -alpha - 1, -alpha);
+            if score > alpha && score < beta {
+                // Re-search with full window if it might be a new best move
+                score = -search(&next_pos, state, tt, depth - 1, ply + 1, -beta, -alpha);
+            }
+        }
 
         if state.stop.load(Ordering::Relaxed) {
             return 0;
@@ -182,7 +220,7 @@ pub fn search(
 }
 
 pub fn quiescence(pos: &Position, state: &mut SearchState, mut alpha: i32, beta: i32) -> i32 {
-    state.nodes += 1;
+    state.nodes.fetch_add(1, Ordering::Relaxed);
 
     let stand_pat = evaluate(pos);
     if stand_pat >= beta {
@@ -237,7 +275,8 @@ mod tests {
         let tt = TranspositionTable::new(1);
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
-        let mut state = SearchState::new(&stop, &pondering, None);
+        let nodes = AtomicU64::new(0);
+        let mut state = SearchState::new(&stop, &pondering, &nodes, None);
 
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);
@@ -258,7 +297,8 @@ mod tests {
         let tt = TranspositionTable::new(1);
         let stop = AtomicBool::new(false);
         let pondering = AtomicBool::new(false);
-        let mut state = SearchState::new(&stop, &pondering, None);
+        let nodes = AtomicU64::new(0);
+        let mut state = SearchState::new(&stop, &pondering, &nodes, None);
 
         let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
         assert!(score > MATE_SCORE - 10);

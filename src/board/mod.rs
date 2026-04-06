@@ -611,6 +611,25 @@ impl Position {
         self.hash
     }
 
+    /// Make a "null move" (passing the turn to the opponent).
+    /// Used for Null Move Pruning in search.
+    pub fn make_null_move(&mut self) {
+        // XOR out old EP
+        if let Some(ep) = self.en_passant {
+            self.hash ^= zobrist::en_passant_key(ep.file());
+        }
+        self.en_passant = None;
+
+        // Flip side to move
+        self.hash ^= zobrist::side_key();
+        if self.side == Color::Black {
+            self.fullmove_number += 1;
+        }
+        self.side = self.side.opposite();
+
+        self.halfmove_clock += 1;
+    }
+
     pub fn is_draw_by_fifty(&self) -> bool {
         self.halfmove_clock >= 100
     }

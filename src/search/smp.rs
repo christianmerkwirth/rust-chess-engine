@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -23,11 +23,6 @@ impl ThreadPool {
     }
 
     /// Run iterative deepening with Lazy SMP.
-    ///
-    /// Spawns `num_threads - 1` helper threads that each run their own iterative
-    /// deepening with slight depth variation, writing results to the shared TT.
-    /// The main thread (thread 0) runs standard search and reports info via the
-    /// callback.  On return, all helpers have been joined.
     #[allow(clippy::too_many_arguments)]
     pub fn search(
         &self,
@@ -40,17 +35,17 @@ impl ThreadPool {
         info_callback: impl Fn(SearchInfo),
     ) -> SearchResult {
         let mut handles = Vec::new();
+        let nodes = Arc::new(AtomicU64::new(0));
 
-        // Spawn N-1 helper threads with depth variation for search diversity.
+        // Spawn N-1 helper threads
         for i in 1..self.num_threads {
             let pos_clone = pos.clone();
             let tt_clone = Arc::clone(&tt);
             let limits_clone = limits.clone();
             let stop_clone = Arc::clone(&stop);
             let pondering_clone = Arc::clone(&pondering);
+            let nodes_clone = Arc::clone(&nodes);
             let tb_clone = tablebase.as_ref().map(Arc::clone);
-            // Thread i starts from a slightly different depth to explore different
-            // parts of the tree and increase TT diversity.
             let start_depth = 1 + (i as i32 % 3);
 
             let handle = thread::spawn(move || {
@@ -60,6 +55,7 @@ impl ThreadPool {
                     &limits_clone,
                     &stop_clone,
                     &pondering_clone,
+                    &nodes_clone,
                     tb_clone,
                     start_depth,
                     |_| {},
@@ -68,19 +64,19 @@ impl ThreadPool {
             handles.push(handle);
         }
 
-        // Main thread (thread 0): standard iterative deepening with info reporting.
+        // Main thread
         let result = iterative_deepening(
             pos,
             &tt,
             limits,
             &stop,
             &pondering,
+            &nodes,
             tablebase,
             1,
             info_callback,
         );
 
-        // Signal helpers to stop (time limit may have already done this) and join.
         stop.store(true, Ordering::Relaxed);
         for handle in handles {
             let _ = handle.join();

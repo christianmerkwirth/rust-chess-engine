@@ -40,6 +40,14 @@ impl MoveList {
     pub fn swap(&mut self, i: usize, j: usize) {
         self.moves.swap(i, j);
     }
+
+    pub fn as_slice(&self) -> &[Move] {
+        &self.moves[0..self.count]
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [Move] {
+        &mut self.moves[0..self.count]
+    }
 }
 
 impl std::ops::Index<usize> for MoveList {
