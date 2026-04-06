@@ -162,6 +162,20 @@ pub fn search(
         }
     }
 
+    // Reverse Futility Pruning (RFP)
+    if depth <= 6
+        && !pos.is_in_check(pos.side_to_move())
+        && ply > 0
+        && beta - alpha <= 1
+        && beta.abs() < MATE_SCORE - 1000
+    {
+        let static_eval = evaluate(pos);
+        let margin = 80 * depth;
+        if static_eval - margin >= beta {
+            return static_eval;
+        }
+    }
+
     // Null Move Pruning (NMP)
     if depth >= 3
         && !pos.is_in_check(pos.side_to_move())
