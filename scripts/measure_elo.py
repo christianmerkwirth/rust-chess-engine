@@ -12,6 +12,7 @@ import subprocess
 import re
 import sys
 import os
+import math
 
 def run_match(args):
     """
@@ -58,8 +59,8 @@ def run_match(args):
     
     # Pattern to match: Elo difference: -100.2 +/- 20.3, LOS: 0.0 %, DrawRatio: 10.5 %
     # Updated to handle 'nan', 'inf', and '-inf'
-    val_re = r"[+-]?\d+\.?\d*|nan|inf|-inf"
-    elo_pattern = re.compile(rf"Elo difference:\s+({val_re})\s+/-\s+({val_re})")
+    val_re = r"[+-]?(?:\d+(?:\.\d+)?|nan|inf)"
+    elo_pattern = re.compile(rf"Elo difference:\s+({val_re})\s+\+/-\s+({val_re})", re.IGNORECASE)
 
     for line in process.stdout:
         print(line, end="")
@@ -113,7 +114,6 @@ def main():
         elo, margin = result
         print("\n" + "="*40)
         
-        import math
         def format_val(v, sign=False):
             if v is None: return "N/A"
             try:
