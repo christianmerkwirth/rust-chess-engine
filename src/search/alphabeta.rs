@@ -6,12 +6,33 @@ use crate::search::tt::{TTData, TTFlag, TranspositionTable};
 use crate::tablebase::{SyzygyTablebase, WdlResult};
 use crate::types::{Move, Piece};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub const MATE_SCORE: i32 = 30000;
 pub const INFINITY: i32 = 32000;
 /// Score used for tablebase wins/losses. Below mate, above normal eval range.
 pub const TABLEBASE_WIN: i32 = 20000;
+
+static LMR_TABLE: OnceLock<[[i32; 64]; 64]> = OnceLock::new();
+
+fn get_lmr_reduction(depth: i32, move_index: usize) -> i32 {
+    let table = LMR_TABLE.get_or_init(|| {
+        let mut t = [[0; 64]; 64];
+        for d in 1..64 {
+            for i in 1..64 {
+                let depth_f = d as f64;
+                let move_f = i as f64;
+                // Standard LMR formula: R = 0.75 + ln(depth) * ln(move_index) / 2.25
+                t[d][i] = (0.75 + depth_f.ln() * move_f.ln() / 2.25) as i32;
+            }
+        }
+        t
+    });
+
+    let d = (depth as usize).min(63);
+    let i = move_index.min(63);
+    table[d][i]
+}
 
 #[inline(always)]
 pub fn score_to_tt(s: i32, ply: i32) -> i16 {
@@ -249,16 +270,42 @@ pub fn search(
                 -alpha,
             );
         } else {
+            // Late Move Reductions
+            let mut reduction = 0;
+            if depth >= 3
+                && i >= 4
+                && !pos.is_in_check(pos.side_to_move())
+                && !mv.is_capture_or_promotion(pos)
+                && extension == 0 // Not a check extension
+            {
+                reduction = get_lmr_reduction(depth, i);
+                reduction = reduction.min(depth - 1);
+            }
+
             // Null window search for non-PV moves
             score = -search(
                 &next_pos,
                 state,
                 tt,
-                depth - 1 + extension,
+                depth - 1 + extension - reduction,
                 ply + 1,
                 -alpha - 1,
                 -alpha,
             );
+
+            if score > alpha && reduction > 0 {
+                // Re-search at full depth with null window
+                score = -search(
+                    &next_pos,
+                    state,
+                    tt,
+                    depth - 1 + extension,
+                    ply + 1,
+                    -alpha - 1,
+                    -alpha,
+                );
+            }
+
             if score > alpha && score < beta {
                 // Re-search with full window if it might be a new best move
                 score = -search(

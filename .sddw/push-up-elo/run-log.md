@@ -8,4 +8,5 @@
 | 4 | history-heuristic | -20.9 | -34.9 | -14.0 | 144.6 | SUCCESS | WIP |
 | 5 | check-extension | -34.9 | -49.0 | -14.1 | 65.9 | SUCCESS | WIP |
 | 6 | delta-pruning | -49.0 | -17.4 | +31.6 | 158.6 | SUCCESS | WIP |
+| 7 | late-move-reductions | -17.4 | +70.4 | +87.8 | 158.3 | SUCCESS | WIP |
 
