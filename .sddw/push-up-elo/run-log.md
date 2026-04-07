@@ -10,4 +10,6 @@
 | 6 | delta-pruning | -49.0 | -17.4 | +31.6 | 158.6 | SUCCESS | WIP |
 | 7 | late-move-reductions | -17.4 | +70.4 | +87.8 | 158.3 | SUCCESS | WIP |
 | 8 | mobility-term | +70.4 | +0.0 | -70.4 | 90.1 | REJECTED | WIP |
+| 9 | king-safety | +70.4 | -20.9 | -91.3 | 95.8 | REJECTED | WIP |
+| 10 | pawn-structure | +70.4 | -70.4 | -140.8 | 91.9 | REJECTED | WIP |
 
