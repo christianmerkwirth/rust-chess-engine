@@ -89,6 +89,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_startpos() {
+        crate::movegen::magics::init();
         let pos = Position::startpos();
         // Starting position should be roughly balanced, but usually slightly
         // favors white due to PSTs (e.g. center control).
@@ -98,6 +99,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_material_advantage() {
+        crate::movegen::magics::init();
         // White has an extra queen
         let pos =
             Position::from_fen("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
@@ -107,6 +109,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_symmetry() {
+        crate::movegen::magics::init();
         let pos_w =
             Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1")
                 .unwrap();
@@ -121,6 +124,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_side_to_move() {
+        crate::movegen::magics::init();
         let pos = Position::startpos();
         let eval_w = evaluate(&pos);
 
@@ -133,6 +137,7 @@ mod tests {
 
     #[test]
     fn test_eval_e2e4_improves_white() {
+        crate::movegen::magics::init();
         let pos_start = Position::startpos();
         let pos_e2e4 = Position::from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1").unwrap();
         
@@ -146,6 +151,7 @@ mod tests {
 
     #[test]
     fn test_eval_a7_beats_a2() {
+        crate::movegen::magics::init();
         // One white pawn on a7 vs one white pawn on a2
         let pos_a2 = Position::from_fen("8/8/8/8/8/8/P7/4K2k w - - 0 1").unwrap();
         let pos_a7 = Position::from_fen("8/P7/8/8/8/8/8/4K2k w - - 0 1").unwrap();
@@ -158,6 +164,7 @@ mod tests {
 
     #[test]
     fn test_king_mg_prefers_back_rank() {
+        crate::movegen::magics::init();
         // Middlegame phase (many pieces)
         let fen_e1 = "rnbq1rk1/pppp1ppp/4pn2/8/8/4PN2/PPPP1PPP/RNBQK2R w KQ - 0 1";
         let fen_e4 = "rnbq1rk1/pppp1ppp/4pn2/8/4K3/4PN2/PPPP1PPP/RNBQ3R w - - 0 1";
@@ -178,10 +185,6 @@ mod tests {
     #[test]
     fn test_pst_bishop_row7_not_duplicate() {
         // Bishop MG row 0 (BERF rank 8) and row 7 (BERF rank 1) should not be identical
-        // PeSTO Bishop MG row 0: [-29, 4, -82, -37, -25, -42, 7, -8]
-        // PeSTO Bishop MG row 7: [-29, 4, -82, -37, -25, -42, 7, -8] wait, are they?
-        // Let me check PeSTO values.
-        // Actually the design says they are duplicates in the current code but shouldn't be.
         let row0 = &PST_MG[Piece::Bishop as usize][0..8];
         let row7 = &PST_MG[Piece::Bishop as usize][56..64];
         assert_ne!(row0, row7, "Bishop MG row 0 and row 7 should not be identical");
