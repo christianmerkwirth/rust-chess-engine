@@ -1,7 +1,7 @@
 use crate::board::Position;
 use crate::eval::evaluate;
 use crate::movegen::{generate_captures, generate_moves};
-use crate::search::ordering::{order_moves, KillerTable};
+use crate::search::ordering::{order_moves, HistoryTable, KillerTable};
 use crate::search::tt::{TTData, TTFlag, TranspositionTable};
 use crate::tablebase::{SyzygyTablebase, WdlResult};
 use crate::types::{Move, Piece};
@@ -40,6 +40,7 @@ use std::time::Instant;
 
 pub struct SearchState<'a> {
     pub killers: KillerTable,
+    pub history: HistoryTable,
     pub nodes: &'a AtomicU64,
     pub stop: &'a AtomicBool,
     pub pondering: &'a AtomicBool,
@@ -60,6 +61,7 @@ impl<'a> SearchState<'a> {
     ) -> Self {
         Self {
             killers: KillerTable::new(),
+            history: HistoryTable::new(),
             nodes,
             stop,
             pondering,
@@ -211,7 +213,13 @@ pub fn search(
         }
     }
 
-    order_moves(&mut moves, pv_move, &state.killers.moves[ply], pos);
+    order_moves(
+        &mut moves,
+        pv_move,
+        &state.killers.moves[ply],
+        &state.history,
+        pos,
+    );
 
     let mut best_move = Move::NONE;
     let mut best_score = -INFINITY;
@@ -222,16 +230,46 @@ pub fn search(
         let mut next_pos = pos.clone();
         next_pos.make_move(mv);
 
+        let extension = if next_pos.is_in_check(next_pos.side_to_move()) {
+            1
+        } else {
+            0
+        };
+
         let mut score;
         if i == 0 {
             // Full window search for first move (PV move)
-            score = -search(&next_pos, state, tt, depth - 1, ply + 1, -beta, -alpha);
+            score = -search(
+                &next_pos,
+                state,
+                tt,
+                depth - 1 + extension,
+                ply + 1,
+                -beta,
+                -alpha,
+            );
         } else {
             // Null window search for non-PV moves
-            score = -search(&next_pos, state, tt, depth - 1, ply + 1, -alpha - 1, -alpha);
+            score = -search(
+                &next_pos,
+                state,
+                tt,
+                depth - 1 + extension,
+                ply + 1,
+                -alpha - 1,
+                -alpha,
+            );
             if score > alpha && score < beta {
                 // Re-search with full window if it might be a new best move
-                score = -search(&next_pos, state, tt, depth - 1, ply + 1, -beta, -alpha);
+                score = -search(
+                    &next_pos,
+                    state,
+                    tt,
+                    depth - 1 + extension,
+                    ply + 1,
+                    -beta,
+                    -alpha,
+                );
             }
         }
 
@@ -246,9 +284,15 @@ pub fn search(
             if score > alpha {
                 alpha = score;
                 if score >= beta {
-                    // Killer move
+                    // History and Killer move
                     if !mv.is_capture_or_promotion(pos) {
                         state.killers.store(ply, mv);
+                        state.history.record(
+                            pos.side_to_move() as usize,
+                            mv.from_sq().0 as usize,
+                            mv.to_sq().0 as usize,
+                            depth,
+                        );
                     }
                     break;
                 }
@@ -329,7 +373,13 @@ pub fn quiescence(
 
     let mut moves = generate_captures(pos);
     // Move ordering for captures (MVV-LVA)
-    order_moves(&mut moves, Move::NONE, &[Move::NONE, Move::NONE], pos);
+    order_moves(
+        &mut moves,
+        Move::NONE,
+        &[Move::NONE, Move::NONE],
+        &state.history,
+        pos,
+    );
 
     for i in 0..moves.len() {
         let mv = moves[i];
@@ -407,6 +457,23 @@ mod tests {
         let data = tt.probe(pos.hash()).unwrap();
         assert_eq!(data.best_move.from_sq(), Square::from_file_rank(7, 4)); // h5
         assert_eq!(data.best_move.to_sq(), Square::from_file_rank(5, 6)); // f7
+    }
+
+    #[test]
+    fn test_check_extension() {
+        crate::movegen::magics::init();
+        // White to move, mate in 2.
+        // 1. Qa7+ Kc8 2. Qc7#
+        let pos = Position::from_fen("1k6/8/1K6/8/8/8/8/Q7 w - - 0 1").unwrap();
+        let tt = TranspositionTable::new(1);
+        let stop = AtomicBool::new(false);
+        let pondering = AtomicBool::new(false);
+        let nodes = AtomicU64::new(0);
+        let mut state = SearchState::new(&stop, &pondering, &nodes, None, None);
+
+        // With check extension, depth 2 is enough to find mate in 2.
+        let score = search(&pos, &mut state, &tt, 2, 0, -INFINITY, INFINITY);
+        assert!(score > MATE_SCORE - 20, "Score was {}, expected mate score", score);
     }
 
     #[test]
