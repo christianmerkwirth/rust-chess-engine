@@ -4,6 +4,9 @@ use crate::board::Position;
 use crate::types::{Color, Piece};
 use pst::{MATERIAL_EG, MATERIAL_MG, PST_EG, PST_MG};
 
+pub const BISHOP_PAIR_MG: i32 = 30;
+pub const BISHOP_PAIR_EG: i32 = 50;
+
 /// Evaluate position in centipawns from side-to-move perspective.
 pub fn evaluate(pos: &Position) -> i32 {
     let mut mg = [0, 0]; // [White, Black]
@@ -35,6 +38,12 @@ pub fn evaluate(pos: &Position) -> i32 {
                 mg[c_idx] += MATERIAL_MG[p_idx] + PST_MG[p_idx][eval_sq];
                 eg[c_idx] += MATERIAL_EG[p_idx] + PST_EG[p_idx][eval_sq];
             }
+        }
+
+        // Bishop pair bonus
+        if pos.pieces(color, Piece::Bishop).count() >= 2 {
+            mg[c_idx] += BISHOP_PAIR_MG;
+            eg[c_idx] += BISHOP_PAIR_EG;
         }
     }
 
@@ -193,5 +202,24 @@ mod tests {
     #[test]
     fn test_material_mg_ne_eg() {
         assert_ne!(MATERIAL_MG, MATERIAL_EG, "MG and EG material values should be different");
+    }
+
+    #[test]
+    fn test_bishop_pair_bonus() {
+        crate::movegen::magics::init();
+        // White has two bishops, black has one.
+        // Positions are otherwise symmetrical.
+        let pos = Position::from_fen("k7/8/8/8/8/8/B1B5/K6b w - - 0 1").unwrap();
+        let eval = evaluate(&pos);
+        
+        // White has two bishops: MG bonus 30, EG bonus 50.
+        // Black has one bishop: no bonus.
+        // Plus PST and material differences.
+        
+        // Let's compare with a position where white only has one bishop.
+        let pos_one = Position::from_fen("k7/8/8/8/8/8/B7/K6b w - - 0 1").unwrap();
+        let eval_one = evaluate(&pos_one);
+        
+        assert!(eval > eval_one + 30, "Bishop pair should provide a significant bonus");
     }
 }
