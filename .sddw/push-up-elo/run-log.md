@@ -7,4 +7,5 @@
 | 3 | reverse-futility-pruning | -41.9 | -20.9 | +21.0 | 91.4 | SUCCESS | WIP |
 | 4 | history-heuristic | -20.9 | -34.9 | -14.0 | 144.6 | SUCCESS | WIP |
 | 5 | check-extension | -34.9 | -49.0 | -14.1 | 65.9 | SUCCESS | WIP |
+| 6 | delta-pruning | -49.0 | -17.4 | +31.6 | 158.6 | SUCCESS | WIP |
 

@@ -1,7 +1,7 @@
 use crate::board::Position;
 use crate::eval::evaluate;
 use crate::movegen::{generate_captures, generate_moves};
-use crate::search::ordering::{order_moves, HistoryTable, KillerTable};
+use crate::search::ordering::{order_moves, HistoryTable, KillerTable, PIECE_VALUES};
 use crate::search::tt::{TTData, TTFlag, TranspositionTable};
 use crate::tablebase::{SyzygyTablebase, WdlResult};
 use crate::types::{Move, Piece};
@@ -324,6 +324,7 @@ pub fn search(
 }
 
 pub const MAX_QPLY: usize = 64;
+pub const DELTA_MARGIN: i32 = 500;
 
 pub fn quiescence(
     pos: &Position,
@@ -371,6 +372,8 @@ pub fn quiescence(
         alpha = stand_pat;
     }
 
+    let in_check = pos.is_in_check(pos.side_to_move());
+
     let mut moves = generate_captures(pos);
     // Move ordering for captures (MVV-LVA)
     order_moves(
@@ -383,6 +386,20 @@ pub fn quiescence(
 
     for i in 0..moves.len() {
         let mv = moves[i];
+
+        // FR-05: Delta Pruning
+        let victim_value = if mv.is_en_passant() {
+            PIECE_VALUES[Piece::Pawn as usize]
+        } else {
+            pos.piece_at(mv.to_sq())
+                .map(|(_, p)| PIECE_VALUES[p as usize])
+                .unwrap_or(0)
+        };
+
+        if !in_check && !mv.is_promotion() && stand_pat + victim_value + DELTA_MARGIN < alpha {
+            continue;
+        }
+
         let mut next_pos = pos.clone();
         next_pos.make_move(mv);
 
@@ -493,5 +510,26 @@ mod tests {
         let tt_score = score_to_tt(score, ply);
         assert_eq!(tt_score, score as i16);
         assert_eq!(score_from_tt(tt_score, ply), score);
+    }
+
+    #[test]
+    fn test_delta_pruning_predicate() {
+        crate::movegen::magics::init();
+        let pos = crate::board::Position::from_fen("8/1k6/8/8/8/8/1p6/1K6 w - - 0 1").unwrap();
+        let stand_pat = evaluate(&pos);
+        // Pawn value is 100.
+        // stand_pat is evaluation of current position (White to move, down a pawn).
+        
+        let mv = Move::new(crate::types::Square::from_file_rank(1, 0), crate::types::Square::from_file_rank(1, 1), 0, 0); // Kxb2
+        let victim_value = pos.piece_at(mv.to_sq()).map(|(_, p)| PIECE_VALUES[p as usize]).unwrap_or(0);
+        assert_eq!(victim_value, 100);
+        
+        // If alpha is high enough, we should prune.
+        let alpha = 500;
+        assert!(!mv.is_promotion() && stand_pat + victim_value + DELTA_MARGIN < alpha);
+        
+        // If alpha is low enough, we should NOT prune.
+        let alpha = -500;
+        assert!(!(!mv.is_promotion() && stand_pat + victim_value + DELTA_MARGIN < alpha));
     }
 }

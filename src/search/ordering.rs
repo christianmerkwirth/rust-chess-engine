@@ -2,7 +2,7 @@ use crate::board::Position;
 use crate::movegen::MoveList;
 use crate::types::{Move, Piece};
 
-const PIECE_VALUES: [i32; 6] = [100, 320, 330, 500, 900, 20000];
+pub const PIECE_VALUES: [i32; 6] = [100, 320, 330, 500, 900, 20000];
 
 pub struct KillerTable {
     pub moves: [[Move; 2]; 256], // MAX_PLY = 256
